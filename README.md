@@ -39,6 +39,18 @@ pip install ultralytics torch torchvision
 
 ### 2. Dataset Setup
 
+#### Option A: Automated Download (Recommended for Linux)
+
+```bash
+# One-command setup - downloads, extracts, and configures everything
+./download_kitti.sh
+
+# Or using Python script
+python download_kitti.py --extract
+```
+
+#### Option B: Manual Download + Automated Setup
+
 ```bash
 # Step 1: Download KITTI dataset manually
 # Visit: http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
@@ -57,7 +69,7 @@ python scripts/kitti_setup.py all --create-yaml
 #   ✓ Generate YAML configuration
 ```
 
-### 3. Train Model
+📖 **Complete Download Guide**: [KITTI_DOWNLOAD_GUIDE.md](KITTI_DOWNLOAD_GUIDE.md)
 
 ```bash
 # Train with default settings
