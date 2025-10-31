@@ -1,0 +1,99 @@
+# Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+
+import torch
+
+from ultralytics.models.yolo.detect import DetectionValidator
+from ultralytics.utils.metrics import DetMetrics, box_iou
+
+
+class Detection3DValidator(DetectionValidator):
+    """
+    A class extending the DetectionValidator class for validation based on a 3D detection model.
+
+    Example:
+        ```python
+        from ultralytics.models.yolo.detect3d import Detection3DValidator
+
+        args = dict(model="yolov12n-3d.pt", data="kitti.yaml")
+        validator = Detection3DValidator(args=args)
+        validator()
+        ```
+    """
+
+    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None):
+        """Initialize Detection3DValidator with 3D detection specific settings."""
+        super().__init__(dataloader, save_dir, pbar, args, _callbacks)
+        self.args.task = "detect3d"
+        # Add 3D-specific metrics tracking
+        self.depth_errors = []
+        self.dim_errors = []
+        self.rot_errors = []
+
+    def preprocess(self, batch):
+        """Preprocesses batch of images for YOLO training."""
+        batch = super().preprocess(batch)
+
+        # Move 3D annotations to device
+        if "dimensions_3d" in batch:
+            batch["dimensions_3d"] = batch["dimensions_3d"].to(self.device, non_blocking=True)
+        if "location_3d" in batch:
+            batch["location_3d"] = batch["location_3d"].to(self.device, non_blocking=True)
+        if "rotation_y" in batch:
+            batch["rotation_y"] = batch["rotation_y"].to(self.device, non_blocking=True)
+        if "alpha" in batch:
+            batch["alpha"] = batch["alpha"].to(self.device, non_blocking=True)
+
+        return batch
+
+    def postprocess(self, preds):
+        """Apply Non-maximum suppression to prediction outputs."""
+        # Handle 3D predictions
+        if isinstance(preds, tuple):
+            preds_2d, preds_3d = preds[0], preds[1]
+        else:
+            preds_2d = preds
+            preds_3d = None
+
+        # Apply NMS on 2D predictions
+        return super().postprocess(preds_2d)
+
+    def update_metrics(self, preds, batch):
+        """Metrics."""
+        # Update 2D metrics using parent class
+        super().update_metrics(preds, batch)
+
+        # TODO: Add 3D-specific metrics
+        # - Average Precision for 3D IoU
+        # - Depth error (absolute/relative)
+        # - Dimension error
+        # - Rotation error
+
+    def get_stats(self):
+        """Returns metrics statistics and results dictionary."""
+        stats = super().get_stats()
+
+        # Add 3D metrics to stats if available
+        if self.depth_errors:
+            stats["metrics/depth_error"] = sum(self.depth_errors) / len(self.depth_errors)
+        if self.dim_errors:
+            stats["metrics/dim_error"] = sum(self.dim_errors) / len(self.dim_errors)
+        if self.rot_errors:
+            stats["metrics/rot_error"] = sum(self.rot_errors) / len(self.rot_errors)
+
+        return stats
+
+    def get_desc(self):
+        """Return a formatted string summarizing class metrics of YOLO model."""
+        # Extend with 3D metrics
+        return ("%22s" + "%11s" * 9) % (
+            "Class",
+            "Images",
+            "Instances",
+            "Box(P",
+            "R",
+            "mAP50",
+            "mAP50-95)",
+            "Depth",
+            "Dim",
+            "Rot",
+        )

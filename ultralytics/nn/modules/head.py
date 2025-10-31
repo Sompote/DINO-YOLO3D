@@ -15,7 +15,7 @@ from .conv import Conv, DWConv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init
 
-__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "RTDETRDecoder", "v10Detect"
+__all__ = "Detect", "Segment", "Pose", "Classify", "OBB", "Detect3D", "RTDETRDecoder", "v10Detect"
 
 
 class Detect(nn.Module):
@@ -225,6 +225,66 @@ class OBB(Detect):
     def decode_bboxes(self, bboxes, anchors):
         """Decode rotated bounding boxes."""
         return dist2rbox(bboxes, self.angle, anchors, dim=1)
+
+
+class Detect3D(Detect):
+    """YOLO 3D detection head for 3D object detection models (KITTI format)."""
+
+    def __init__(self, nc=80, ch=()):
+        """Initialize 3D detection head with number of classes `nc` and layer channels `ch`."""
+        super().__init__(nc, ch)
+        # 3D box parameters: depth (1), 3D dimensions (3), rotation_y (1) = 5 extra parameters
+        self.n3d = 5  # depth, height_3d, width_3d, length_3d, rotation_y
+
+        c4 = max(ch[0] // 4, self.n3d)
+        # Additional head for 3D-specific parameters
+        self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.n3d, 1)) for x in ch)
+
+    def forward(self, x):
+        """Concatenates and returns predicted 2D bounding boxes, class probabilities, and 3D parameters."""
+        bs = x[0].shape[0]  # batch size
+        # Predict 3D parameters: [depth, h3d, w3d, l3d, rotation_y]
+        params_3d = torch.cat([self.cv4[i](x[i]).view(bs, self.n3d, -1) for i in range(self.nl)], 2)
+
+        # Store 3D parameters for decoding
+        if not self.training:
+            # depth: positive value
+            self.depth = params_3d[:, 0:1, :].sigmoid() * 100  # scale to reasonable depth range (0-100m)
+            # 3D dimensions: positive values
+            self.dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # scale to reasonable size (0-10m)
+            # rotation_y: -pi to pi
+            self.rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+
+        # Get 2D detection output from parent Detect class
+        x = Detect.forward(self, x)
+
+        if self.training:
+            return x, params_3d
+
+        # Concatenate 2D output with 3D parameters for inference
+        return torch.cat([x, params_3d], 1) if self.export else (torch.cat([x[0], params_3d], 1), (x[1], params_3d))
+
+    def decode_bboxes_3d(self, bboxes_2d, params_3d, anchors):
+        """
+        Decode 3D bounding boxes from 2D boxes and 3D parameters.
+
+        Args:
+            bboxes_2d: 2D bounding boxes [x, y, w, h]
+            params_3d: 3D parameters [depth, h3d, w3d, l3d, rotation_y]
+            anchors: anchor points
+
+        Returns:
+            boxes_3d: 3D bounding box parameters
+        """
+        # Extract 3D parameters
+        depth = params_3d[:, 0:1, :].sigmoid() * 100
+        dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # [h, w, l]
+        rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+
+        # Combine into 3D box representation
+        # Format: [x_2d, y_2d, w_2d, h_2d, depth, h_3d, w_3d, l_3d, rotation_y]
+        boxes_3d = torch.cat([bboxes_2d, depth, dim_3d, rotation_y], dim=1)
+        return boxes_3d
 
 
 class Pose(Detect):

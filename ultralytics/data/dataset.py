@@ -2,6 +2,7 @@
 
 import json
 from collections import defaultdict
+from copy import deepcopy
 from itertools import repeat
 from multiprocessing.pool import ThreadPool
 from pathlib import Path
@@ -519,3 +520,256 @@ class ClassificationDataset:
             x["msgs"] = msgs  # warnings
             save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
             return samples
+
+
+class KITTIDataset(YOLODataset):
+    """
+    Dataset class for loading KITTI 3D object detection labels.
+
+    KITTI label format (per line in .txt file):
+    Type Truncated Occluded Alpha Bbox_2D[4] Dimensions_3D[3] Location_3D[3] Rotation_y [Score]
+
+    Example:
+    Car 0.00 0 -1.58 587.01 173.33 614.12 200.12 1.65 1.67 3.64 -0.65 1.71 46.70 -1.59
+
+    Args:
+        data (dict, optional): A dataset YAML dictionary. Defaults to None.
+        task (str): Task type, should be 'detect3d'. Defaults to 'detect3d'.
+    """
+
+    def __init__(self, *args, data=None, task="detect3d", **kwargs):
+        """Initialize KITTI 3D detection dataset."""
+        self.use_3d = True
+        self.data = data
+        # Don't use segments or keypoints for 3D detection
+        self.use_segments = False
+        self.use_keypoints = False
+        self.use_obb = False
+        # Call BaseDataset init directly to avoid YOLODataset's task assertions
+        BaseDataset.__init__(self, *args, **kwargs)
+
+    def cache_labels(self, path=Path("./labels.cache")):
+        """
+        Cache KITTI 3D dataset labels, check images and read shapes.
+
+        Args:
+            path (Path): Path where to save the cache file.
+
+        Returns:
+            (dict): labels with 3D annotations.
+        """
+        x = {"labels": []}
+        nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
+        desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
+        total = len(self.im_files)
+
+        with ThreadPool(NUM_THREADS) as pool:
+            results = pool.imap(
+                func=self._verify_kitti_label,
+                iterable=zip(
+                    self.im_files,
+                    self.label_files,
+                    repeat(self.prefix),
+                ),
+            )
+            pbar = TQDM(results, desc=desc, total=total)
+            for im_file, labels_dict, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+                nm += nm_f
+                nf += nf_f
+                ne += ne_f
+                nc += nc_f
+                if im_file and labels_dict:
+                    x["labels"].append(labels_dict)
+                if msg:
+                    msgs.append(msg)
+                pbar.desc = f"{desc} {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            pbar.close()
+
+        if msgs:
+            LOGGER.info("\n".join(msgs))
+        if nf == 0:
+            LOGGER.warning(f"{self.prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}")
+        x["hash"] = get_hash(self.label_files + self.im_files)
+        x["results"] = nf, nm, ne, nc, len(self.im_files)
+        x["msgs"] = msgs  # warnings
+        save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
+        return x
+
+    @staticmethod
+    def _verify_kitti_label(args):
+        """
+        Verify and parse a single KITTI label file.
+
+        Args:
+            args: Tuple of (im_file, lb_file, prefix)
+
+        Returns:
+            Tuple of (im_file, labels_dict, nm, nf, ne, nc, msg)
+        """
+        im_file, lb_file, prefix = args
+        nm, nf, ne, nc, msg = 0, 0, 0, 0, ""
+
+        try:
+            # Verify image
+            im = Image.open(im_file)
+            im.verify()
+            shape = im.size  # (width, height)
+
+            if not Path(lb_file).exists():
+                nm = 1  # missing label
+                return im_file, None, nm, nf, ne, nc, msg
+
+            # Parse KITTI label file
+            with open(lb_file) as f:
+                lines = [x.strip() for x in f.readlines() if x.strip()]
+
+            if len(lines) == 0:
+                ne = 1  # empty label
+                return im_file, None, nm, nf, ne, nc, msg
+
+            # Parse each line
+            cls_list = []
+            bbox_2d_list = []
+            dimensions_3d_list = []
+            location_3d_list = []
+            rotation_y_list = []
+            alpha_list = []
+
+            # KITTI class name to ID mapping (customize based on your needs)
+            kitti_classes = {
+                "Car": 0,
+                "Van": 0,
+                "Truck": 1,
+                "Pedestrian": 2,
+                "Person_sitting": 2,
+                "Cyclist": 3,
+                "Tram": 1,
+                "Misc": 4,
+                "DontCare": -1,
+            }
+
+            for line in lines:
+                parts = line.split()
+                if len(parts) < 15:
+                    continue
+
+                obj_type = parts[0]
+                if obj_type == "DontCare":
+                    continue
+
+                # Get class ID
+                cls_id = kitti_classes.get(obj_type, 4)  # default to 'Misc'
+
+                # 2D bbox: [left, top, right, bottom]
+                bbox_2d = [float(x) for x in parts[4:8]]
+
+                # 3D dimensions: [height, width, length]
+                dimensions_3d = [float(x) for x in parts[8:11]]
+
+                # 3D location: [x, y, z] in camera coordinates
+                location_3d = [float(x) for x in parts[11:14]]
+
+                # Rotation around Y-axis
+                rotation_y = float(parts[14])
+
+                # Alpha (observation angle)
+                alpha = float(parts[3])
+
+                # Normalize 2D bbox to [0, 1]
+                x1, y1, x2, y2 = bbox_2d
+                w, h = shape
+                x_center = ((x1 + x2) / 2) / w
+                y_center = ((y1 + y2) / 2) / h
+                width = (x2 - x1) / w
+                height = (y2 - y1) / h
+
+                cls_list.append(cls_id)
+                bbox_2d_list.append([x_center, y_center, width, height])
+                dimensions_3d_list.append(dimensions_3d)
+                location_3d_list.append(location_3d)
+                rotation_y_list.append(rotation_y)
+                alpha_list.append(alpha)
+
+            if len(cls_list) == 0:
+                ne = 1  # no valid objects
+                return im_file, None, nm, nf, ne, nc, msg
+
+            # Create labels dict
+            labels_dict = {
+                "im_file": im_file,
+                "shape": shape,
+                "cls": np.array(cls_list).reshape(-1, 1),
+                "bboxes": np.array(bbox_2d_list),
+                "dimensions_3d": np.array(dimensions_3d_list),  # [h, w, l]
+                "location_3d": np.array(location_3d_list),  # [x, y, z]
+                "rotation_y": np.array(rotation_y_list).reshape(-1, 1),
+                "alpha": np.array(alpha_list).reshape(-1, 1),
+                "segments": [],
+                "keypoints": None,
+                "normalized": True,
+                "bbox_format": "xywh",
+            }
+
+            nf = 1  # found
+            return im_file, labels_dict, nm, nf, ne, nc, msg
+
+        except Exception as e:
+            nc = 1  # corrupt
+            msg = f"{prefix}WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}"
+            return im_file, None, nm, nf, ne, nc, msg
+
+    def build_transforms(self, hyp=None):
+        """Build transforms for KITTI 3D detection."""
+        # Use standard YOLO transforms but be careful with 3D annotations
+        if self.augment:
+            hyp.mosaic = hyp.mosaic if self.augment and not self.rect else 0.0
+            hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
+            transforms = v8_transforms(self, self.imgsz, hyp)
+        else:
+            transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
+        transforms.append(
+            Format(
+                bbox_format="xywh",
+                normalize=True,
+                return_mask=False,
+                return_keypoint=False,
+                batch_idx=True,
+                mask_ratio=hyp.mask_ratio if self.augment else 0,
+                mask_overlap=hyp.overlap_mask if self.augment else True,
+            )
+        )
+        return transforms
+
+    def __getitem__(self, index):
+        """
+        Get dataset item with 3D annotations.
+
+        Returns a dictionary with image and 3D labels.
+        """
+        return self.transforms(self.get_image_and_label(index))
+
+    def get_image_and_label(self, index):
+        """Get image and label for a given index."""
+        label = deepcopy(self.labels[index])
+        label.pop("shape", None)
+        label["img"] = self.get_image(index)
+        return label
+
+    def update_labels_info(self, label):
+        """Custom update for KITTI labels with 3D info."""
+        bboxes = label.pop("bboxes")
+        segments = label.pop("segments", [])
+        keypoints = label.pop("keypoints", None)
+        bbox_format = label.pop("bbox_format")
+        normalized = label.pop("normalized")
+
+        # Create Instances object
+        label["instances"] = Instances(bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized)
+
+        # Store 3D-specific info separately (they won't be affected by augmentation)
+        label["dimensions_3d"] = label.get("dimensions_3d", np.array([]))
+        label["location_3d"] = label.get("location_3d", np.array([]))
+        label["rotation_y"] = label.get("rotation_y", np.array([]))
+        label["alpha"] = label.get("alpha", np.array([]))
+
+        return label

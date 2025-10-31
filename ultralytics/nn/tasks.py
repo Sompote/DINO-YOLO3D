@@ -43,6 +43,7 @@ from ultralytics.nn.modules import (
     Conv2,
     ConvTranspose,
     Detect,
+    Detect3D,
     DWConv,
     DWConvTranspose2d,
     Focus,
@@ -398,6 +399,21 @@ class OBBModel(DetectionModel):
     def init_criterion(self):
         """Initialize the loss criterion for the model."""
         return v8OBBLoss(self)
+
+
+class Detection3DModel(DetectionModel):
+    """YOLOv12 3D Object Detection model for KITTI dataset."""
+
+    def __init__(self, cfg="yolov12n-3d.yaml", ch=3, nc=None, verbose=True):
+        """Initialize YOLOv12 3D detection model with given config and parameters."""
+        super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
+
+    def init_criterion(self):
+        """Initialize the loss criterion for the 3D detection model."""
+        # Import the 3D loss function (we'll create this later)
+        from ultralytics.utils.loss import v8Detection3DLoss
+
+        return v8Detection3DLoss(self)
 
 
 class SegmentationModel(DetectionModel):
@@ -1031,7 +1047,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 legacy = False
                 if scale in "mlx":
                     args[3] = True
-            if m is A2C2f: 
+            if m is A2C2f:
                 legacy = False
                 if scale in "lx":  # for L/X sizes
                     args.append(True)

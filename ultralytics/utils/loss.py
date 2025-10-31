@@ -741,3 +741,160 @@ class E2EDetectLoss:
         one2one = preds["one2one"]
         loss_one2one = self.one2one(one2one, batch)
         return loss_one2many[0] + loss_one2one[0], loss_one2many[1] + loss_one2one[1]
+
+
+class v8Detection3DLoss(v8DetectionLoss):
+    """
+    Calculates losses for 3D object detection in YOLO models.
+
+    Extends v8DetectionLoss with additional losses for 3D parameters:
+    - Depth loss
+    - 3D dimension loss (height, width, length)
+    - Rotation loss (rotation_y)
+    """
+
+    def __init__(self, model):
+        """Initialize v8Detection3DLoss with model."""
+        super().__init__(model)
+        # Weight factors for 3D losses
+        self.depth_weight = 1.0
+        self.dim_weight = 1.0
+        self.rot_weight = 1.0
+
+    def __call__(self, preds, batch):
+        """Calculate and return the loss for 3D YOLO model."""
+        # loss indices: 0=box, 1=cls, 2=dfl, 3=depth, 4=dim, 5=rot
+        loss = torch.zeros(6, device=self.device)
+
+        # Get predictions
+        feats, params_3d = preds if isinstance(preds[0], list) else preds[1]
+        batch_size = params_3d.shape[0]
+
+        # Split 2D predictions
+        pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
+            (self.reg_max * 4, self.nc), 1
+        )
+
+        # Permute for loss calculation
+        pred_scores = pred_scores.permute(0, 2, 1).contiguous()
+        pred_distri = pred_distri.permute(0, 2, 1).contiguous()
+        params_3d = params_3d.permute(0, 2, 1).contiguous()
+
+        dtype = pred_scores.dtype
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
+
+        # Prepare targets (2D boxes)
+        targets = torch.cat((batch["batch_idx"].view(-1, 1), batch["cls"].view(-1, 1), batch["bboxes"]), 1)
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0.0)
+
+        # Decode 2D boxes
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
+
+        # Task-aligned assignment for 2D detection
+        _, target_bboxes, target_scores, fg_mask, target_gt_idx = self.assigner(
+            pred_scores.detach().sigmoid(),
+            (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+            anchor_points * stride_tensor,
+            gt_labels,
+            gt_bboxes,
+            mask_gt,
+        )
+
+        target_scores_sum = max(target_scores.sum(), 1)
+
+        # 2D Classification loss
+        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum
+
+        # 2D Bbox loss
+        if fg_mask.sum():
+            target_bboxes /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss(
+                pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
+            )
+
+            # 3D losses (only for positive samples)
+            if "dimensions_3d" in batch and "rotation_y" in batch:
+                # Get 3D ground truth
+                # dimensions_3d shape: [N, 3] -> [h, w, l]
+                # location_3d shape: [N, 3] -> [x, y, z] (we mainly care about z for depth)
+                # rotation_y shape: [N, 1]
+
+                # Match 3D targets to assigned anchors
+                gt_depth = batch.get("location_3d", torch.zeros(batch_size, 0, 3, device=self.device))[:, :, 2:3]  # z
+                gt_dims = batch.get("dimensions_3d", torch.zeros(batch_size, 0, 3, device=self.device))  # [h,w,l]
+                gt_rot = batch.get("rotation_y", torch.zeros(batch_size, 0, 1, device=self.device))
+
+                # Build full target tensors
+                batch_idx = batch["batch_idx"].view(-1).long()
+
+                # Assign 3D targets to positive anchors
+                target_depth = torch.zeros_like(params_3d[:, :, 0:1])
+                target_dims = torch.zeros_like(params_3d[:, :, 1:4])
+                target_rot = torch.zeros_like(params_3d[:, :, 4:5])
+
+                # For each image in batch, assign targets
+                for i in range(batch_size):
+                    img_mask = batch_idx == i
+                    if img_mask.sum() > 0:
+                        img_fg_mask = fg_mask[i]
+                        img_target_idx = target_gt_idx[i][img_fg_mask].long()
+
+                        # Filter valid indices
+                        valid_idx = (img_target_idx >= 0) & (img_target_idx < img_mask.sum())
+                        if valid_idx.sum() > 0:
+                            gt_indices = torch.where(img_mask)[0][img_target_idx[valid_idx]]
+
+                            # Map to original batch indexing
+                            if len(gt_depth) > 0 and i < gt_depth.shape[0]:
+                                target_depth[i, img_fg_mask] = gt_depth[i, img_target_idx]
+                                target_dims[i, img_fg_mask] = gt_dims[i, img_target_idx]
+                                target_rot[i, img_fg_mask] = gt_rot[i, img_target_idx]
+
+                # Extract predicted 3D parameters
+                pred_depth = params_3d[:, :, 0:1].sigmoid() * 100  # [0, 100m]
+                pred_dims = params_3d[:, :, 1:4].sigmoid() * 10  # [0, 10m]
+                pred_rot = (params_3d[:, :, 4:5].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
+
+                # Depth loss (L1 loss)
+                if fg_mask.sum() > 0:
+                    loss[3] = (
+                        self.depth_weight
+                        * torch.nn.functional.l1_loss(pred_depth[fg_mask], target_depth[fg_mask], reduction="sum")
+                        / target_scores_sum
+                    )
+
+                # Dimension loss (L1 loss)
+                if fg_mask.sum() > 0:
+                    loss[4] = (
+                        self.dim_weight
+                        * torch.nn.functional.l1_loss(pred_dims[fg_mask], target_dims[fg_mask], reduction="sum")
+                        / target_scores_sum
+                    )
+
+                # Rotation loss (smooth L1 loss for angular values)
+                if fg_mask.sum() > 0:
+                    # Use sine/cosine representation for rotation to handle periodicity
+                    pred_rot_sin = torch.sin(pred_rot[fg_mask])
+                    pred_rot_cos = torch.cos(pred_rot[fg_mask])
+                    target_rot_sin = torch.sin(target_rot[fg_mask])
+                    target_rot_cos = torch.cos(target_rot[fg_mask])
+
+                    loss[5] = (
+                        self.rot_weight
+                        * (
+                            torch.nn.functional.smooth_l1_loss(pred_rot_sin, target_rot_sin, reduction="sum")
+                            + torch.nn.functional.smooth_l1_loss(pred_rot_cos, target_rot_cos, reduction="sum")
+                        )
+                        / target_scores_sum
+                    )
+
+        # Apply hyperparameter weights
+        loss[0] *= self.hyp.box  # 2D box gain
+        loss[1] *= self.hyp.cls  # cls gain
+        loss[2] *= self.hyp.dfl  # dfl gain
+        # 3D losses use default weight of 1.0 (can be adjusted in hyperparameters)
+
+        return loss.sum() * batch_size, loss.detach()

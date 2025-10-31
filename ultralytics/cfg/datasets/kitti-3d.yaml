@@ -1,0 +1,84 @@
+# Ultralytics YOLO 🚀, AGPL-3.0 license
+# KITTI 3D Object Detection dataset configuration
+# Download: http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
+# Documentation: https://github.com/ultralytics/ultralytics/blob/main/docs/en/datasets/detect/kitti.md
+
+# Dataset structure:
+# kitti/
+# ├── training/
+# │   ├── image_2/     # Left color camera images
+# │   ├── label_2/     # Training labels (3D bounding boxes)
+# │   └── calib/       # Camera calibration matrices
+# └── testing/
+#     ├── image_2/     # Test images
+#     └── calib/       # Test calibration matrices
+
+# Path configuration (modify these paths to match your dataset location)
+path: ../datasets/kitti # dataset root dir
+train: training/image_2 # train images (relative to 'path')
+val: training/image_2   # val images (relative to 'path') - KITTI uses same for train/val split
+test: testing/image_2   # test images (optional)
+
+# Classes
+# KITTI has 8 main object categories
+names:
+  0: Car
+  1: Truck
+  2: Pedestrian
+  3: Cyclist
+  4: Misc
+  5: Van
+  6: Tram
+  7: Person_sitting
+
+# Number of classes
+nc: 8
+
+# Download script/URL (optional - uncomment and modify if needed)
+# download: |
+#   import shutil
+#   from pathlib import Path
+#   import requests
+#
+#   # KITTI dataset must be downloaded manually from:
+#   # http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark=3d
+#   # Required files:
+#   # - Left color images of object data set (12 GB)
+#   # - Training labels of object data set (5 MB)
+#   # - Camera calibration matrices (16 MB)
+
+# Additional KITTI 3D specific parameters
+task: detect3d
+
+# Camera calibration (example values - these should be loaded from calib files per image)
+# P2 is the 3x4 projection matrix for the left color camera
+# These are used to convert 2D to 3D coordinates
+camera:
+  # Example P2 matrix (this will be loaded from individual calib files)
+  fx: 721.5377  # focal length x
+  fy: 721.5377  # focal length y
+  cx: 609.5593  # principal point x
+  cy: 172.854   # principal point y
+
+# Training/validation split
+# KITTI provides 7481 training images
+# Common split: 3712 train / 3769 val
+split:
+  train: 0.5  # Use 50% for training
+  val: 0.5    # Use 50% for validation
+
+# Data augmentation parameters (tuned for autonomous driving scenarios)
+augment:
+  hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
+  hsv_s: 0.7    # image HSV-Saturation augmentation (fraction)
+  hsv_v: 0.4    # image HSV-Value augmentation (fraction)
+  degrees: 0.0  # image rotation (+/- deg) - keep 0 for 3D detection
+  translate: 0.1  # image translation (+/- fraction)
+  scale: 0.5    # image scale (+/- gain)
+  shear: 0.0    # image shear (+/- deg) - keep 0 for 3D detection
+  perspective: 0.0  # image perspective (+/- fraction) - keep 0 for 3D detection
+  flipud: 0.0   # image flip up-down (probability) - not applicable for driving
+  fliplr: 0.5   # image flip left-right (probability)
+  mosaic: 1.0   # image mosaic (probability)
+  mixup: 0.0    # image mixup (probability)
+  copy_paste: 0.0  # segment copy-paste (probability)
