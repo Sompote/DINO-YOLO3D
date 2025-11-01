@@ -825,7 +825,7 @@ class v8Detection3DLoss(v8DetectionLoss):
                 # dimensions_3d shape: [N_total, 3] -> [h, w, l]
                 # location_3d shape: [N_total, 3] -> [x, y, z] (we mainly care about z for depth)
                 # rotation_y shape: [N_total, 1]
-                batch_idx_gt = batch["batch_idx"].view(-1).long()
+                batch_idx_gt = batch["batch_idx"].view(-1).long().to(self.device)
                 gt_depth_flat = batch["location_3d"].to(self.device)[:, 2:3]  # z coordinate
                 gt_dims_flat = batch["dimensions_3d"].to(self.device)  # [h,w,l]
                 gt_rot_flat = batch["rotation_y"].to(self.device)
@@ -855,11 +855,13 @@ class v8Detection3DLoss(v8DetectionLoss):
                         continue
 
                     # Map local indices to global indices in the flat GT tensors
+                    # Use nonzero instead of where for consistency and ensure device placement
                     gt_indices_local = img_target_idx[valid_idx]  # indices relative to this image's GTs
-                    gt_indices_global = torch.where(img_gt_mask)[0][gt_indices_local]  # indices in flat tensors
+                    img_gt_indices = img_gt_mask.nonzero(as_tuple=False).squeeze(1)  # global indices on correct device
+                    gt_indices_global = img_gt_indices[gt_indices_local]  # indices in flat tensors
 
                     # Assign 3D targets
-                    fg_positions = torch.where(img_fg_mask)[0][valid_idx]
+                    fg_positions = img_fg_mask.nonzero(as_tuple=False).squeeze(1)[valid_idx]
                     target_depth[i, fg_positions] = gt_depth_flat[gt_indices_global]
                     target_dims[i, fg_positions] = gt_dims_flat[gt_indices_global]
                     target_rot[i, fg_positions] = gt_rot_flat[gt_indices_global]
