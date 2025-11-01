@@ -826,9 +826,10 @@ class v8Detection3DLoss(v8DetectionLoss):
                 # location_3d shape: [N_total, 3] -> [x, y, z] (we mainly care about z for depth)
                 # rotation_y shape: [N_total, 1]
                 batch_idx_gt = batch["batch_idx"].view(-1).long().to(self.device)
-                gt_depth_flat = batch["location_3d"].to(self.device)[:, 2:3]  # z coordinate
-                gt_dims_flat = batch["dimensions_3d"].to(self.device)  # [h,w,l]
-                gt_rot_flat = batch["rotation_y"].to(self.device)
+                # Convert to same dtype as params_3d for AMP compatibility
+                gt_depth_flat = batch["location_3d"].to(self.device, dtype=params_3d.dtype)[:, 2:3]  # z coordinate
+                gt_dims_flat = batch["dimensions_3d"].to(self.device, dtype=params_3d.dtype)  # [h,w,l]
+                gt_rot_flat = batch["rotation_y"].to(self.device, dtype=params_3d.dtype)
 
                 # Assign 3D targets to positive anchors
                 target_depth = torch.zeros_like(params_3d[:, :, 0:1])
