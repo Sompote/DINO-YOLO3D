@@ -15,14 +15,11 @@
 
 # Path configuration (modify these paths to match your dataset location)
 path: /Users/sompoteyouwai/Downloads/datakitti/datasets/kitti
-train: training # train images (relative to 'path')
-val: training # val images (relative to 'path') - KITTI uses same for train/val split
-test: testing # test images (optional)
+train: training/image_2 # train images (relative to 'path') - points to image directory
+val: training/image_2 # val images (relative to 'path') - KITTI uses same for train/val split
+test: testing/image_2 # test images (optional)
 
-# KITTI specific paths
-image_dir: image_2 # subdirectory for images
-label_dir: label_2 # subdirectory for labels
-calib_dir: calib # subdirectory for calibration files
+# Note: Labels are automatically found by replacing 'image_2' with 'label_2' in KITTIDataset
 
 # Classes
 # KITTI has 8 main object categories

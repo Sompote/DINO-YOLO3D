@@ -561,7 +561,7 @@ class KITTIDataset(YOLODataset):
 
     def get_labels(self):
         """Override to use KITTI label paths instead of default img2label_paths."""
-        from .utils import load_dataset_cache_file, DATASET_CACHE_VERSION, get_hash, HELP_URL, TQDM, LOCAL_RANK, LOGGER
+        # Imports are already at module level - no need to re-import
 
         # Use our custom KITTI label file paths
         self.label_files = self._get_kitti_label_files()
