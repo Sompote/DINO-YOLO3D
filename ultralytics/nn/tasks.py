@@ -1150,6 +1150,8 @@ def guess_model_task(model):
         m = cfg["head"][-1][-2].lower()  # output module name
         if m in {"classify", "classifier", "cls", "fc"}:
             return "classify"
+        if m == "detect3d":
+            return "detect3d"
         if "detect" in m:
             return "detect"
         if m == "segment":
@@ -1180,6 +1182,8 @@ def guess_model_task(model):
                 return "pose"
             elif isinstance(m, OBB):
                 return "obb"
+            elif isinstance(m, Detect3D):
+                return "detect3d"
             elif isinstance(m, (Detect, WorldDetect, v10Detect)):
                 return "detect"
 
@@ -1194,6 +1198,8 @@ def guess_model_task(model):
             return "pose"
         elif "-obb" in model.stem or "obb" in model.parts:
             return "obb"
+        elif "-3d" in model.stem or "detect3d" in model.parts:
+            return "detect3d"
         elif "detect" in model.parts:
             return "detect"
 

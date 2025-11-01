@@ -2073,6 +2073,19 @@ class Format:
         # Then we can use collate_fn
         if self.batch_idx:
             labels["batch_idx"] = torch.zeros(nl)
+
+        # Preserve 3D annotations if they exist (for KITTI 3D detection)
+        for key, shape in [("dimensions_3d", 3), ("location_3d", 3), ("rotation_y", 1), ("alpha", 1)]:
+            if key in labels:
+                val = labels[key]
+                if isinstance(val, np.ndarray) and len(val) > 0:
+                    labels[key] = torch.from_numpy(val).float()
+                elif not isinstance(val, torch.Tensor):
+                    labels[key] = torch.zeros((nl, shape), dtype=torch.float32)
+                # Ensure it's float32 for consistency
+                if isinstance(labels[key], torch.Tensor):
+                    labels[key] = labels[key].float()
+
         return labels
 
     def _format_img(self, img):

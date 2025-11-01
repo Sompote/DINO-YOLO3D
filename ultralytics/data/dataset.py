@@ -239,7 +239,7 @@ class YOLODataset(BaseDataset):
             value = values[i]
             if k == "img":
                 value = torch.stack(value, 0)
-            if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb"}:
+            if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb", "dimensions_3d", "location_3d", "rotation_y", "alpha"}:
                 value = torch.cat(value, 0)
             new_batch[k] = value
         new_batch["batch_idx"] = list(new_batch["batch_idx"])
@@ -761,10 +761,13 @@ class KITTIDataset(YOLODataset):
 
     def build_transforms(self, hyp=None):
         """Build transforms for KITTI 3D detection."""
-        # Use standard YOLO transforms but be careful with 3D annotations
+        # Disable augmentations that combine multiple images (incompatible with 3D annotations)
+        # Since 3D annotations are camera-specific, we cannot merge images from different views
         if self.augment:
-            hyp.mosaic = hyp.mosaic if self.augment and not self.rect else 0.0
-            hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
+            # Disable mosaic, mixup, and copy_paste for 3D detection
+            hyp.mosaic = 0.0
+            hyp.mixup = 0.0
+            hyp.copy_paste = 0.0
             transforms = v8_transforms(self, self.imgsz, hyp)
         else:
             transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
@@ -793,8 +796,14 @@ class KITTIDataset(YOLODataset):
         """Get image and label for a given index."""
         label = deepcopy(self.labels[index])
         label.pop("shape", None)
-        label["img"] = self.get_image(index)
-        return label
+        label["img"], label["ori_shape"], label["resized_shape"] = self.load_image(index)
+        label["ratio_pad"] = (
+            label["resized_shape"][0] / label["ori_shape"][0],
+            label["resized_shape"][1] / label["ori_shape"][1],
+        )
+        if self.rect:
+            label["rect_shape"] = self.batch_shapes[self.batch[index]]
+        return self.update_labels_info(label)
 
     def update_labels_info(self, label):
         """Custom update for KITTI labels with 3D info."""
@@ -803,6 +812,15 @@ class KITTIDataset(YOLODataset):
         keypoints = label.pop("keypoints", None)
         bbox_format = label.pop("bbox_format")
         normalized = label.pop("normalized")
+
+        # Convert segments to numpy array (same as YOLODataset)
+        segment_resamples = 100 if self.use_obb else 1000
+        if len(segments) > 0:
+            max_len = max(len(s) for s in segments)
+            segment_resamples = (max_len + 1) if segment_resamples < max_len else segment_resamples
+            segments = np.stack(resample_segments(segments, n=segment_resamples), axis=0)
+        else:
+            segments = np.zeros((0, segment_resamples, 2), dtype=np.float32)
 
         # Create Instances object
         label["instances"] = Instances(bboxes, segments, keypoints, bbox_format=bbox_format, normalized=normalized)
