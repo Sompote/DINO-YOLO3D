@@ -756,10 +756,11 @@ class v8Detection3DLoss(v8DetectionLoss):
     def __init__(self, model):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
-        # Weight factors for 3D losses
-        self.depth_weight = 1.0
-        self.dim_weight = 1.0
-        self.rot_weight = 1.0
+        # Weight factors for 3D losses (reduced to balance with 2D losses)
+        # Log-space depth loss is already smaller, but we still scale it down
+        self.depth_weight = 0.5  # Reduced from 1.0
+        self.dim_weight = 0.5    # Reduced from 1.0 (normalized to [0,1] range)
+        self.rot_weight = 1.0     # Keep rotation weight at 1.0
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
@@ -819,19 +820,15 @@ class v8Detection3DLoss(v8DetectionLoss):
             )
 
             # 3D losses (only for positive samples)
-            if "dimensions_3d" in batch and "rotation_y" in batch:
-                # Get 3D ground truth
-                # dimensions_3d shape: [N, 3] -> [h, w, l]
-                # location_3d shape: [N, 3] -> [x, y, z] (we mainly care about z for depth)
-                # rotation_y shape: [N, 1]
-
-                # Match 3D targets to assigned anchors
-                gt_depth = batch.get("location_3d", torch.zeros(batch_size, 0, 3, device=self.device))[:, :, 2:3]  # z
-                gt_dims = batch.get("dimensions_3d", torch.zeros(batch_size, 0, 3, device=self.device))  # [h,w,l]
-                gt_rot = batch.get("rotation_y", torch.zeros(batch_size, 0, 1, device=self.device))
-
-                # Build full target tensors
-                batch_idx = batch["batch_idx"].view(-1).long()
+            if "dimensions_3d" in batch and "rotation_y" in batch and "location_3d" in batch:
+                # Get 3D ground truth from batch (flat tensors concatenated across all images)
+                # dimensions_3d shape: [N_total, 3] -> [h, w, l]
+                # location_3d shape: [N_total, 3] -> [x, y, z] (we mainly care about z for depth)
+                # rotation_y shape: [N_total, 1]
+                batch_idx_gt = batch["batch_idx"].view(-1).long()
+                gt_depth_flat = batch["location_3d"].to(self.device)[:, 2:3]  # z coordinate
+                gt_dims_flat = batch["dimensions_3d"].to(self.device)  # [h,w,l]
+                gt_rot_flat = batch["rotation_y"].to(self.device)
 
                 # Assign 3D targets to positive anchors
                 target_depth = torch.zeros_like(params_3d[:, :, 0:1])
@@ -840,42 +837,72 @@ class v8Detection3DLoss(v8DetectionLoss):
 
                 # For each image in batch, assign targets
                 for i in range(batch_size):
-                    img_mask = batch_idx == i
-                    if img_mask.sum() > 0:
-                        img_fg_mask = fg_mask[i]
-                        img_target_idx = target_gt_idx[i][img_fg_mask].long()
+                    # Get ground truth objects for this image
+                    img_gt_mask = batch_idx_gt == i
+                    if img_gt_mask.sum() == 0:
+                        continue
 
-                        # Filter valid indices
-                        valid_idx = (img_target_idx >= 0) & (img_target_idx < img_mask.sum())
-                        if valid_idx.sum() > 0:
-                            gt_indices = torch.where(img_mask)[0][img_target_idx[valid_idx]]
+                    # Get the foreground mask and target indices for this image
+                    img_fg_mask = fg_mask[i]
+                    if img_fg_mask.sum() == 0:
+                        continue
 
-                            # Map to original batch indexing
-                            if len(gt_depth) > 0 and i < gt_depth.shape[0]:
-                                target_depth[i, img_fg_mask] = gt_depth[i, img_target_idx]
-                                target_dims[i, img_fg_mask] = gt_dims[i, img_target_idx]
-                                target_rot[i, img_fg_mask] = gt_rot[i, img_target_idx]
+                    img_target_idx = target_gt_idx[i][img_fg_mask].long()
+
+                    # Filter valid indices (must be >= 0 and within the number of GT objects for this image)
+                    valid_idx = (img_target_idx >= 0) & (img_target_idx < img_gt_mask.sum())
+                    if valid_idx.sum() == 0:
+                        continue
+
+                    # Map local indices to global indices in the flat GT tensors
+                    gt_indices_local = img_target_idx[valid_idx]  # indices relative to this image's GTs
+                    gt_indices_global = torch.where(img_gt_mask)[0][gt_indices_local]  # indices in flat tensors
+
+                    # Assign 3D targets
+                    fg_positions = torch.where(img_fg_mask)[0][valid_idx]
+                    target_depth[i, fg_positions] = gt_depth_flat[gt_indices_global]
+                    target_dims[i, fg_positions] = gt_dims_flat[gt_indices_global]
+                    target_rot[i, fg_positions] = gt_rot_flat[gt_indices_global]
 
                 # Extract predicted 3D parameters
+                # Use log-space for depth to handle large value ranges better
                 pred_depth = params_3d[:, :, 0:1].sigmoid() * 100  # [0, 100m]
                 pred_dims = params_3d[:, :, 1:4].sigmoid() * 10  # [0, 10m]
                 pred_rot = (params_3d[:, :, 4:5].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
 
-                # Depth loss (L1 loss)
+                # Depth loss (using log-space to reduce gradient magnitude)
                 if fg_mask.sum() > 0:
-                    loss[3] = (
-                        self.depth_weight
-                        * torch.nn.functional.l1_loss(pred_depth[fg_mask], target_depth[fg_mask], reduction="sum")
-                        / target_scores_sum
-                    )
+                    # Filter out invalid depth values (negative or extremely large values indicate DontCare)
+                    valid_depth_mask = (target_depth[fg_mask] > 0) & (target_depth[fg_mask] < 200)
+                    if valid_depth_mask.sum() > 0:
+                        # Use log space for depth: log(pred+1) vs log(target+1)
+                        # This normalizes the loss to [0, ~5] range instead of [0, 100]
+                        pred_depth_valid = pred_depth[fg_mask][valid_depth_mask]
+                        target_depth_valid = target_depth[fg_mask][valid_depth_mask]
 
-                # Dimension loss (L1 loss)
+                        pred_depth_log = torch.log(pred_depth_valid + 1.0)
+                        target_depth_log = torch.log(target_depth_valid + 1.0)
+
+                        loss[3] = (
+                            self.depth_weight
+                            * torch.nn.functional.l1_loss(pred_depth_log, target_depth_log, reduction="sum")
+                            / target_scores_sum
+                        )
+
+                # Dimension loss (L1 loss with normalization)
                 if fg_mask.sum() > 0:
-                    loss[4] = (
-                        self.dim_weight
-                        * torch.nn.functional.l1_loss(pred_dims[fg_mask], target_dims[fg_mask], reduction="sum")
-                        / target_scores_sum
-                    )
+                    # Filter out invalid dimensions (negative values indicate DontCare)
+                    valid_dim_mask = (target_dims[fg_mask] > 0).all(dim=-1, keepdim=True)
+                    if valid_dim_mask.sum() > 0:
+                        # Normalize by dividing by 10m to bring values to [0, 1] range
+                        pred_dims_valid = pred_dims[fg_mask][valid_dim_mask.squeeze(-1)] / 10.0
+                        target_dims_valid = target_dims[fg_mask][valid_dim_mask.squeeze(-1)] / 10.0
+
+                        loss[4] = (
+                            self.dim_weight
+                            * torch.nn.functional.l1_loss(pred_dims_valid, target_dims_valid, reduction="sum")
+                            / target_scores_sum
+                        )
 
                 # Rotation loss (smooth L1 loss for angular values)
                 if fg_mask.sum() > 0:
