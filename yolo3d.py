@@ -127,13 +127,6 @@ def cmd_train(args):
 """
     print(config_info)
 
-    # Confirm training
-    if not args.yes:
-        response = input(f"\n{Colors.BOLD}Start training? [y/N]: {Colors.ENDC}")
-        if response.lower() not in ["y", "yes"]:
-            print_warning("Training cancelled")
-            return 0
-
     print_section("Starting Training")
 
     try:

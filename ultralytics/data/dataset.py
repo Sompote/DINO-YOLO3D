@@ -559,6 +559,36 @@ class KITTIDataset(YOLODataset):
             label_files.append(label_path)
         return label_files
 
+    def get_labels(self):
+        """Override to use KITTI label paths instead of default img2label_paths."""
+        from .utils import load_dataset_cache_file, DATASET_CACHE_VERSION, get_hash, HELP_URL, TQDM, LOCAL_RANK, LOGGER
+
+        # Use our custom KITTI label file paths
+        self.label_files = self._get_kitti_label_files()
+        cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
+
+        try:
+            cache, exists = load_dataset_cache_file(cache_path), True
+            assert cache["version"] == DATASET_CACHE_VERSION
+            assert cache["hash"] == get_hash(self.label_files + self.im_files)
+        except (FileNotFoundError, AssertionError, AttributeError):
+            cache, exists = self.cache_labels(cache_path), False
+
+        # Display cache
+        nf, nm, ne, nc, n = cache.pop("results")
+        if exists and LOCAL_RANK in {-1, 0}:
+            d = f"Scanning {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            TQDM(None, desc=self.prefix + d, total=n, initial=n)
+            if cache["msgs"]:
+                LOGGER.info("\n".join(cache["msgs"]))
+
+        # Read cache
+        labels = cache["labels"]
+        if not labels:
+            LOGGER.warning(f"{self.prefix}WARNING ⚠️ No labels found in {cache_path}. {HELP_URL}")
+        self.im_files = [lb["im_file"] for lb in labels]
+        return labels
+
     def cache_labels(self, path=Path("./labels.cache")):
         """
         Cache KITTI 3D dataset labels, check images and read shapes.
