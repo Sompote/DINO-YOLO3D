@@ -31,17 +31,16 @@ class Detection3DValidator(DetectionValidator):
 
     def preprocess(self, batch):
         """Preprocesses batch of images for YOLO training."""
+        # Ensure batch is a dict (not a tuple or other type)
+        if not isinstance(batch, dict):
+            raise TypeError(f"Expected batch to be a dict, got {type(batch)}")
+
         batch = super().preprocess(batch)
 
-        # Move 3D annotations to device
-        if "dimensions_3d" in batch:
-            batch["dimensions_3d"] = batch["dimensions_3d"].to(self.device, non_blocking=True)
-        if "location_3d" in batch:
-            batch["location_3d"] = batch["location_3d"].to(self.device, non_blocking=True)
-        if "rotation_y" in batch:
-            batch["rotation_y"] = batch["rotation_y"].to(self.device, non_blocking=True)
-        if "alpha" in batch:
-            batch["alpha"] = batch["alpha"].to(self.device, non_blocking=True)
+        # Move 3D annotations to device (check they exist and are tensors)
+        for key in ["dimensions_3d", "location_3d", "rotation_y", "alpha"]:
+            if key in batch and batch[key] is not None and hasattr(batch[key], 'to'):
+                batch[key] = batch[key].to(self.device, non_blocking=True)
 
         return batch
 
