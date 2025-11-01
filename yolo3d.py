@@ -117,18 +117,28 @@ def cmd_train(args):
         print_info(f"Using model: {model_path} with scale: {model_scale}")
 
     # Print configuration
+    nbs_display = args.nbs if args.nbs > 0 else "64 (auto)"
+    accumulate = max(round((args.nbs if args.nbs > 0 else 64) / args.batch), 1)
+
     config_info = f"""
   Model:           {Colors.BOLD}{model_path}{Colors.ENDC}
   Scale:           {Colors.BOLD}{model_scale if model_scale else 'default'}{Colors.ENDC}
   Dataset:         {Colors.BOLD}{args.data}{Colors.ENDC}
   Epochs:          {Colors.BOLD}{args.epochs}{Colors.ENDC}
   Batch Size:      {Colors.BOLD}{args.batch}{Colors.ENDC}
+  Nominal Batch:   {Colors.BOLD}{nbs_display}{Colors.ENDC}
+  Grad Accum:      {Colors.BOLD}{accumulate} step(s){Colors.ENDC}
   Image Size:      {Colors.BOLD}{args.imgsz}{Colors.ENDC}
   Device:          {Colors.BOLD}{args.device}{Colors.ENDC}
   Workers:         {Colors.BOLD}{args.workers}{Colors.ENDC}
   Experiment Name: {Colors.BOLD}{args.name}{Colors.ENDC}
 """
     print(config_info)
+
+    # Show info about gradient accumulation
+    if accumulate > 1:
+        print_info(f"Using gradient accumulation: {accumulate} steps × {args.batch} batch = {accumulate * args.batch} effective batch")
+        print_info(f"To disable gradient accumulation, set --nbs {args.batch}")
 
     print_section("Starting Training")
 
@@ -160,31 +170,37 @@ def cmd_train(args):
             model = YOLO(model_path)
 
         # Train
-        results = model.train(
-            data=args.data,
-            epochs=args.epochs,
-            imgsz=args.imgsz,
-            batch=args.batch,
-            name=args.name,
-            device=args.device,
-            workers=args.workers,
-            patience=args.patience,
-            save=args.save,
-            pretrained=args.pretrained,
-            optimizer=args.optimizer,
-            verbose=args.verbose,
-            seed=args.seed,
-            lr0=args.lr0,
-            lrf=args.lrf,
-            momentum=args.momentum,
-            weight_decay=args.weight_decay,
-            warmup_epochs=args.warmup_epochs,
-            box=args.box,
-            cls=args.cls,
-            dfl=args.dfl,
-            plots=args.plots,
-            val=args.val,
-        )
+        train_kwargs = {
+            "data": args.data,
+            "epochs": args.epochs,
+            "imgsz": args.imgsz,
+            "batch": args.batch,
+            "name": args.name,
+            "device": args.device,
+            "workers": args.workers,
+            "patience": args.patience,
+            "save": args.save,
+            "pretrained": args.pretrained,
+            "optimizer": args.optimizer,
+            "verbose": args.verbose,
+            "seed": args.seed,
+            "lr0": args.lr0,
+            "lrf": args.lrf,
+            "momentum": args.momentum,
+            "weight_decay": args.weight_decay,
+            "warmup_epochs": args.warmup_epochs,
+            "box": args.box,
+            "cls": args.cls,
+            "dfl": args.dfl,
+            "plots": args.plots,
+            "val": args.val,
+        }
+
+        # Add nbs if specified (controls gradient accumulation)
+        if args.nbs > 0:
+            train_kwargs["nbs"] = args.nbs
+
+        results = model.train(**train_kwargs)
 
         print_section("Training Complete!")
         print_success(f"Model saved to: runs/detect/{args.name}/weights/best.pt")
@@ -412,7 +428,8 @@ For more information: python yolo3d.py <command> --help
 
     # Training parameters
     parser_train.add_argument("--epochs", type=int, default=100, help="Number of epochs (default: 100)")
-    parser_train.add_argument("--batch", type=int, default=16, help="Batch size (default: 16)")
+    parser_train.add_argument("--batch", type=int, default=16, help="Batch size per GPU (default: 16)")
+    parser_train.add_argument("--nbs", type=int, default=-1, help="Nominal batch size for gradient accumulation. Set to batch size to disable accumulation. Default: -1 (auto=64)")
     parser_train.add_argument("--imgsz", type=int, default=640, help="Image size (default: 640)")
     parser_train.add_argument("--device", type=str, default="0", help="Device (0, 1, 2, etc. or cpu)")
     parser_train.add_argument("--workers", type=int, default=8, help="Number of workers (default: 8)")
