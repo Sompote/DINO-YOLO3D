@@ -20,11 +20,21 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+# Add current directory to Python path to use local ultralytics package
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 try:
     from ultralytics import YOLO
     from ultralytics.utils import LOGGER
-except ImportError:
-    print("Error: ultralytics package not found. Install with: pip install ultralytics")
+except ImportError as e:
+    print("Error: ultralytics package not found or failed to import.")
+    print(f"Details: {e}")
+    print("\nSolutions:")
+    print("  1. Make sure you're running from the project root directory")
+    print("  2. Install ultralytics: pip install ultralytics")
+    print("  3. Check that the local ultralytics/ directory exists")
     sys.exit(1)
 
 
