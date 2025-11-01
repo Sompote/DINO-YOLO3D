@@ -547,6 +547,17 @@ class KITTIDataset(YOLODataset):
         self.use_obb = False
         # Call BaseDataset init directly to avoid YOLODataset's task assertions
         BaseDataset.__init__(self, *args, **kwargs)
+        # Override label_files to use KITTI structure (image_2 -> label_2)
+        self.label_files = self._get_kitti_label_files()
+
+    def _get_kitti_label_files(self):
+        """Convert KITTI image paths to label paths (image_2 -> label_2)."""
+        label_files = []
+        for img_path in self.im_files:
+            # Replace 'image_2' with 'label_2' and change extension to .txt
+            label_path = str(img_path).replace("/image_2/", "/label_2/").rsplit(".", 1)[0] + ".txt"
+            label_files.append(label_path)
+        return label_files
 
     def cache_labels(self, path=Path("./labels.cache")):
         """

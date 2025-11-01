@@ -14,10 +14,15 @@
 #     └── calib/       # Test calibration matrices
 
 # Path configuration (modify these paths to match your dataset location)
-path: ../datasets/kitti # dataset root dir
-train: training/image_2 # train images (relative to 'path')
-val: training/image_2   # val images (relative to 'path') - KITTI uses same for train/val split
-test: testing/image_2   # test images (optional)
+path: /Users/sompoteyouwai/Downloads/datakitti/datasets/kitti
+train: training # train images (relative to 'path')
+val: training # val images (relative to 'path') - KITTI uses same for train/val split
+test: testing # test images (optional)
+
+# KITTI specific paths
+image_dir: image_2 # subdirectory for images
+label_dir: label_2 # subdirectory for labels
+calib_dir: calib # subdirectory for calibration files
 
 # Classes
 # KITTI has 8 main object categories
@@ -55,30 +60,30 @@ task: detect3d
 # These are used to convert 2D to 3D coordinates
 camera:
   # Example P2 matrix (this will be loaded from individual calib files)
-  fx: 721.5377  # focal length x
-  fy: 721.5377  # focal length y
-  cx: 609.5593  # principal point x
-  cy: 172.854   # principal point y
+  fx: 721.5377 # focal length x
+  fy: 721.5377 # focal length y
+  cx: 609.5593 # principal point x
+  cy: 172.854 # principal point y
 
 # Training/validation split
 # KITTI provides 7481 training images
 # Common split: 3712 train / 3769 val
 split:
-  train: 0.5  # Use 50% for training
-  val: 0.5    # Use 50% for validation
+  train: 0.5 # Use 50% for training
+  val: 0.5 # Use 50% for validation
 
 # Data augmentation parameters (tuned for autonomous driving scenarios)
 augment:
-  hsv_h: 0.015  # image HSV-Hue augmentation (fraction)
-  hsv_s: 0.7    # image HSV-Saturation augmentation (fraction)
-  hsv_v: 0.4    # image HSV-Value augmentation (fraction)
-  degrees: 0.0  # image rotation (+/- deg) - keep 0 for 3D detection
-  translate: 0.1  # image translation (+/- fraction)
-  scale: 0.5    # image scale (+/- gain)
-  shear: 0.0    # image shear (+/- deg) - keep 0 for 3D detection
-  perspective: 0.0  # image perspective (+/- fraction) - keep 0 for 3D detection
-  flipud: 0.0   # image flip up-down (probability) - not applicable for driving
-  fliplr: 0.5   # image flip left-right (probability)
-  mosaic: 1.0   # image mosaic (probability)
-  mixup: 0.0    # image mixup (probability)
-  copy_paste: 0.0  # segment copy-paste (probability)
+  hsv_h: 0.015 # image HSV-Hue augmentation (fraction)
+  hsv_s: 0.7 # image HSV-Saturation augmentation (fraction)
+  hsv_v: 0.4 # image HSV-Value augmentation (fraction)
+  degrees: 0.0 # image rotation (+/- deg) - keep 0 for 3D detection
+  translate: 0.1 # image translation (+/- fraction)
+  scale: 0.5 # image scale (+/- gain)
+  shear: 0.0 # image shear (+/- deg) - keep 0 for 3D detection
+  perspective: 0.0 # image perspective (+/- fraction) - keep 0 for 3D detection
+  flipud: 0.0 # image flip up-down (probability) - not applicable for driving
+  fliplr: 0.5 # image flip left-right (probability)
+  mosaic: 1.0 # image mosaic (probability)
+  mixup: 0.0 # image mixup (probability)
+  copy_paste: 0.0 # segment copy-paste (probability)
