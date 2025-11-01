@@ -35,6 +35,12 @@ class Detection3DValidator(DetectionValidator):
         if not isinstance(batch, dict):
             raise TypeError(f"Expected batch to be a dict, got {type(batch)}")
 
+        # Check if batch["img"] is a tuple or list (should be a tensor)
+        if "img" in batch:
+            if isinstance(batch["img"], (tuple, list)):
+                # If it's a tuple/list, convert to tensor by stacking
+                batch["img"] = torch.stack(list(batch["img"]), 0)
+
         batch = super().preprocess(batch)
 
         # Move 3D annotations to device (check they exist and are tensors)
