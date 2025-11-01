@@ -100,7 +100,8 @@ def cmd_train(args):
         print_info("Example: ultralytics/cfg/datasets/kitti-3d.yaml")
         return 1
 
-    # Determine model
+    # Determine model and scale
+    model_scale = None
     if args.model.endswith(".pt"):
         print_info(f"Loading pretrained model: {args.model}")
         model_path = args.model
@@ -109,14 +110,16 @@ def cmd_train(args):
         model_path = args.model
     else:
         # Assume it's a model size (n, s, m, l, x)
+        model_scale = args.model
         model_path = f"ultralytics/cfg/models/v12/yolov12{args.model}-3d.yaml"
         if not Path(model_path).exists():
             model_path = f"ultralytics/cfg/models/v12/yolov12-3d.yaml"
-        print_info(f"Using model: {model_path}")
+        print_info(f"Using model: {model_path} with scale: {model_scale}")
 
     # Print configuration
     config_info = f"""
   Model:           {Colors.BOLD}{model_path}{Colors.ENDC}
+  Scale:           {Colors.BOLD}{model_scale if model_scale else 'default'}{Colors.ENDC}
   Dataset:         {Colors.BOLD}{args.data}{Colors.ENDC}
   Epochs:          {Colors.BOLD}{args.epochs}{Colors.ENDC}
   Batch Size:      {Colors.BOLD}{args.batch}{Colors.ENDC}
@@ -131,7 +134,16 @@ def cmd_train(args):
 
     try:
         # Load model
-        model = YOLO(model_path)
+        # For YAML files with specified scale, we need to modify the config
+        if model_scale and model_path.endswith(".yaml"):
+            import yaml
+
+            with open(model_path, "r") as f:
+                cfg = yaml.safe_load(f)
+            cfg["scale"] = model_scale  # Add scale to config
+            model = YOLO(cfg)
+        else:
+            model = YOLO(model_path)
 
         # Train
         results = model.train(
