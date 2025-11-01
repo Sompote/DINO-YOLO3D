@@ -767,7 +767,10 @@ class v8Detection3DLoss(v8DetectionLoss):
         loss = torch.zeros(6, device=self.device)
 
         # Get predictions
-        feats, params_3d = preds if isinstance(preds[0], list) else preds[1]
+        # preds is a tuple: (feats, params_3d)
+        # feats is a list of feature maps from Detect.forward()
+        # params_3d is the 3D parameters tensor
+        feats, params_3d = preds
         batch_size = params_3d.shape[0]
 
         # Split 2D predictions
