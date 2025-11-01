@@ -872,6 +872,11 @@ class v8Detection3DLoss(v8DetectionLoss):
                 pred_dims = params_3d[:, :, 1:4].sigmoid() * 10  # [0, 10m]
                 pred_rot = (params_3d[:, :, 4:5].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
 
+                # Ensure targets have same dtype as predictions (for AMP compatibility)
+                target_depth = target_depth.to(pred_depth.dtype)
+                target_dims = target_dims.to(pred_dims.dtype)
+                target_rot = target_rot.to(pred_rot.dtype)
+
                 # Depth loss (using log-space to reduce gradient magnitude)
                 if fg_mask.sum() > 0:
                     # Filter out invalid depth values (negative or extremely large values indicate DontCare)
