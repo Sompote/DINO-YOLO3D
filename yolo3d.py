@@ -135,13 +135,27 @@ def cmd_train(args):
     try:
         # Load model
         # For YAML files with specified scale, we need to modify the config
+        tmp_yaml_path = None
         if model_scale and model_path.endswith(".yaml"):
             import yaml
+            import tempfile
+            import os
 
+            # Load YAML config
             with open(model_path, "r") as f:
                 cfg = yaml.safe_load(f)
-            cfg["scale"] = model_scale  # Add scale to config
-            model = YOLO(cfg)
+
+            # Add scale to config
+            cfg["scale"] = model_scale
+
+            # Create temporary YAML file with scale in filename for proper detection
+            # Use pattern like yolov12s-3d.yaml so guess_model_scale can extract 's'
+            tmp_fd, tmp_yaml_path = tempfile.mkstemp(suffix=f"-yolov12{model_scale}-3d.yaml", text=True)
+            with os.fdopen(tmp_fd, "w") as tmp_file:
+                yaml.dump(cfg, tmp_file)
+
+            # Load model from temporary file (don't delete yet, model needs to read it)
+            model = YOLO(tmp_yaml_path)
         else:
             model = YOLO(model_path)
 
@@ -186,6 +200,11 @@ def cmd_train(args):
     except Exception as e:
         print_error(f"Training failed: {e}")
         return 1
+    finally:
+        # Clean up temporary YAML file if created
+        if tmp_yaml_path and Path(tmp_yaml_path).exists():
+            import os
+            os.unlink(tmp_yaml_path)
 
 
 def cmd_val(args):
