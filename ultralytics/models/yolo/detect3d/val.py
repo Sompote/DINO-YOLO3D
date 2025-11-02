@@ -148,8 +148,7 @@ class Detection3DValidator(DetectionValidator):
         # Apply NMS on 2D predictions
         outputs = super().postprocess(preds_2d)
         return outputs
-*** End Patch
-*** Insert After: Line 75
+
     def init_metrics(self, model):
         """Initialize standard and KITTI-specific metrics."""
         super().init_metrics(model)
