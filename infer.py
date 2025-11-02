@@ -205,8 +205,8 @@ def run_inference(
 
     # Process results
     for idx, result in enumerate(results):
-        # Get image
-        img = result.orig_img.copy()
+        # Get image (ensure contiguous for cv2 operations)
+        img = np.ascontiguousarray(result.orig_img)
         img_path = Path(result.path) if result.path else Path(f"image_{idx}")
 
         # Get boxes
@@ -221,8 +221,8 @@ def run_inference(
         # Check if 3D params are available
         has_3d = boxes_data.shape[1] >= 11
 
-        # Create annotator
-        annotator = Annotator(img, line_width=line_width)
+        # Create annotator (force cv2 mode for consistency)
+        annotator = Annotator(img, line_width=line_width, pil=False)
 
         # Draw each detection
         for box in boxes_data:
@@ -247,15 +247,19 @@ def run_inference(
             # Draw 2D box
             annotator.box_label(xyxy, label, color=color)
 
-            # Draw 3D box
-            if visualize_3d and has_3d:
+        # Get result image with 2D annotations
+        img_result = annotator.result()
+
+        # Draw 3D boxes on top of 2D annotations
+        if visualize_3d and has_3d:
+            for box in boxes_data:
+                xyxy = box[:4]
+                cls_id = int(box[5])
+                color = colors_palette(cls_id, True)
                 depth = float(box[6])
                 dims = np.array([box[7], box[8], box[9]])
                 rot = float(box[10])
-                draw_3d_box(img, xyxy, depth, dims, rot, color, line_width)
-
-        # Get result image
-        img_result = annotator.result()
+                draw_3d_box(img_result, xyxy, depth, dims, rot, color, line_width)
 
         # Save image/video
         if result.path:
