@@ -349,7 +349,14 @@ class YOLO3DInference:
             color = self.colors(cls_id, True)
 
             # Build label
-            label = f"{self.names[cls_id]} {conf:.2f}"
+            if isinstance(self.names, dict):
+                class_name = self.names.get(int(cls_id), str(int(cls_id)))
+            elif isinstance(self.names, (list, tuple)):
+                idx = int(cls_id)
+                class_name = self.names[idx] if 0 <= idx < len(self.names) else str(idx)
+            else:
+                class_name = str(int(cls_id))
+            label = f"{class_name} {conf:.2f}"
 
             # Add 3D info to label
             if depth_vals is not None:
