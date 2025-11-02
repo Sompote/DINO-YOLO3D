@@ -246,14 +246,18 @@ class Detect3D(Detect):
         # Predict 3D parameters: [depth, h3d, w3d, l3d, rotation_y]
         params_3d = torch.cat([self.cv4[i](x[i]).view(bs, self.n3d, -1) for i in range(self.nl)], 2)
 
-        # Store 3D parameters for decoding
+        # Decode 3D parameters for inference
         if not self.training:
             # depth: positive value
-            self.depth = params_3d[:, 0:1, :].sigmoid() * 100  # scale to reasonable depth range (0-100m)
+            depth = params_3d[:, 0:1, :].sigmoid() * 100  # scale to reasonable depth range (0-100m)
             # 3D dimensions: positive values
-            self.dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # scale to reasonable size (0-10m)
+            dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # scale to reasonable size (0-10m)
             # rotation_y: -pi to pi
-            self.rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+            rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+            # Concatenate decoded parameters
+            params_3d_decoded = torch.cat([depth, dim_3d, rotation_y], 1)
+        else:
+            params_3d_decoded = params_3d
 
         # Get 2D detection output from parent Detect class
         x = Detect.forward(self, x)
@@ -261,8 +265,8 @@ class Detect3D(Detect):
         if self.training:
             return x, params_3d
 
-        # Concatenate 2D output with 3D parameters for inference
-        return torch.cat([x, params_3d], 1) if self.export else (torch.cat([x[0], params_3d], 1), (x[1], params_3d))
+        # Concatenate 2D output with decoded 3D parameters for inference
+        return torch.cat([x, params_3d_decoded], 1) if self.export else (torch.cat([x[0], params_3d_decoded], 1), (x[1], params_3d))
 
     def decode_bboxes_3d(self, bboxes_2d, params_3d, anchors):
         """
