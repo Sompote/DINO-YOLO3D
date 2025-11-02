@@ -123,6 +123,11 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
         thickness: Line thickness
         P: Camera projection matrix (3, 4)
     """
+    # Validate inputs
+    if depth <= 0 or depth > 100:
+        # Invalid depth, skip drawing
+        return img
+
     # Use default KITTI P2 matrix if not provided
     if P is None:
         P = np.array([
@@ -131,51 +136,67 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
             [0.0, 0.0, 1.0, 0.002745884]
         ])
 
-    # Back-project 2D center to 3D location
+    # Back-project 2D bottom center to 3D location
+    # In KITTI, location is the bottom center of the 3D box
     x1, y1, x2, y2 = box_2d
     cx_2d = (x1 + x2) / 2
-    cy_2d = (y1 + y2) / 2
+    # Use bottom of 2D box for y (more accurate for ground plane objects)
+    cy_2d = y2  # bottom of box
 
     fx, fy = P[0, 0], P[1, 1]
-    cx, cy = P[0, 2], P[1, 2]
+    cx_cam, cy_cam = P[0, 2], P[1, 2]
 
-    # Compute 3D center from 2D center and depth
-    x_3d = (cx_2d - cx) * depth / fx
-    y_3d = (cy_2d - cy) * depth / fy
+    # Compute 3D location from 2D projection and depth
+    # location_3d = (2D_point - camera_center) * depth / focal_length
+    x_3d = (cx_2d - cx_cam) * depth / fx
+    y_3d = (cy_2d - cy_cam) * depth / fy
     z_3d = depth
 
     location = np.array([x_3d, y_3d, z_3d])
 
     # Compute 3D box corners
-    corners_3d = compute_3d_box_corners(location, dims, rotation)
+    try:
+        corners_3d = compute_3d_box_corners(location, dims, rotation)
 
-    # Project to 2D
-    corners_2d = project_3d_to_2d(corners_3d, P)
+        # Project to 2D
+        corners_2d = project_3d_to_2d(corners_3d, P)
 
-    # Draw the 3D box
-    # Face 1 (bottom): 0-1-2-3
-    # Face 2 (top): 4-5-6-7
-    # Edges connect: 0-4, 1-5, 2-6, 3-7
+        # Check if corners are within reasonable bounds
+        if np.any(corners_2d < -1000) or np.any(corners_2d > 10000):
+            # Projection failed, skip
+            return img
 
-    # Draw bottom face
-    for i in range(4):
-        j = (i + 1) % 4
-        cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[j]), color, thickness)
+        # Draw the 3D box
+        # Bottom face: 0-1-2-3
+        # Top face: 4-5-6-7
+        # Vertical edges: 0-4, 1-5, 2-6, 3-7
 
-    # Draw top face
-    for i in range(4):
-        j = (i + 1) % 4
-        cv2.line(img, tuple(corners_2d[4 + i]), tuple(corners_2d[4 + j]), color, thickness)
+        # Draw all edges with normal thickness
+        edges = [
+            # Bottom face
+            (0, 1), (1, 2), (2, 3), (3, 0),
+            # Top face
+            (4, 5), (5, 6), (6, 7), (7, 4),
+            # Vertical edges
+            (0, 4), (1, 5), (2, 6), (3, 7)
+        ]
 
-    # Draw vertical edges
-    for i in range(4):
-        cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[4 + i]), color, thickness)
+        for start, end in edges:
+            pt1 = tuple(corners_2d[start])
+            pt2 = tuple(corners_2d[end])
+            cv2.line(img, pt1, pt2, color, thickness)
 
-    # Highlight front face (facing camera) with thicker lines
-    # Front face indices: 0, 1, 5, 4
-    front_edges = [(0, 1), (1, 5), (5, 4), (4, 0)]
-    for start, end in front_edges:
-        cv2.line(img, tuple(corners_2d[start]), tuple(corners_2d[end]), color, thickness + 1)
+        # Optionally highlight front face
+        # Front face: 0-1-5-4 (facing camera)
+        front_edges = [(0, 1), (1, 5), (5, 4), (4, 0)]
+        for start, end in front_edges:
+            pt1 = tuple(corners_2d[start])
+            pt2 = tuple(corners_2d[end])
+            cv2.line(img, pt1, pt2, color, thickness + 1)
+
+    except Exception as e:
+        # If projection fails, silently skip
+        pass
 
     return img
 
@@ -309,18 +330,10 @@ def run_inference(
             # Get color
             color = colors_palette(cls_id, True)
 
-            # Build label
+            # Build simple label (class name only)
             label = f"{names[cls_id]} {conf_val:.2f}"
 
-            # Add 3D info to label if available
-            if has_3d:
-                depth = float(box[6])
-                h, w, l = float(box[7]), float(box[8]), float(box[9])
-                rot = float(box[10])
-                label += f"\nD:{depth:.1f}m H:{h:.1f}m W:{w:.1f}m L:{l:.1f}m"
-                label += f"\nR:{math.degrees(rot):.1f}deg"  # Use 'deg' instead of ° symbol
-
-            # Draw 2D box
+            # Draw 2D box with simple label
             annotator.box_label(xyxy, label, color=color)
 
         # Get result image with 2D annotations
