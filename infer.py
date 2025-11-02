@@ -398,8 +398,9 @@ def parse_args():
     parser.add_argument("--save-txt", action="store_true", help="Save results to *.txt")
     parser.add_argument("--save-conf", action="store_true", help="Save confidences in labels")
     parser.add_argument("--classes", nargs="+", type=int, help="Filter by class")
-    parser.add_argument("--visualize-3d", action="store_true", default=True, help="Draw 3D boxes")
+    parser.add_argument("--visualize-3d", dest="visualize_3d", action="store_true", help="Draw 3D boxes")
     parser.add_argument("--no-visualize-3d", dest="visualize_3d", action="store_false", help="Don't draw 3D boxes")
+    parser.set_defaults(visualize_3d=True)
     parser.add_argument("--view-img", action="store_true", help="Show results")
     parser.add_argument("--line-width", type=int, default=2, help="Bounding box line width")
 
