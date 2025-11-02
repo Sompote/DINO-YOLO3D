@@ -184,6 +184,128 @@ class Detection3DValidator(DetectionValidator):
         diff = (pred - target + math.pi) % (2 * math.pi) - math.pi
         return abs(diff)
 
+    @staticmethod
+    def _boxes3d_to_corners(location, dimensions, rotation_y):
+        """
+        Convert 3D bounding boxes to 8 corner points in camera coordinates.
+        Args:
+            location: (N, 3) - (x, y, z) center in camera coords
+            dimensions: (N, 3) - (h, w, l) height, width, length
+            rotation_y: (N,) - rotation around Y axis
+        Returns:
+            corners: (N, 8, 3) - 8 corner points for each box
+        """
+        if location is None or dimensions is None or rotation_y is None:
+            return None
+        if location.shape[0] == 0:
+            return torch.zeros((0, 8, 3), device=location.device, dtype=location.dtype)
+
+        # Dimensions: h, w, l
+        h, w, l = dimensions[:, 0:1], dimensions[:, 1:2], dimensions[:, 2:3]
+
+        # Create corner template (8 corners of a unit box centered at origin)
+        # Order: rear face (clockwise from top-left), then front face
+        x_corners = torch.cat([l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2], dim=1)
+        y_corners = torch.cat([-h/2, h/2, h/2, -h/2, -h/2, h/2, h/2, -h/2], dim=1)
+        z_corners = torch.cat([w/2, w/2, w/2, w/2, -w/2, -w/2, -w/2, -w/2], dim=1)
+
+        corners = torch.stack([x_corners, y_corners, z_corners], dim=2)  # (N, 8, 3)
+
+        # Apply rotation around Y axis
+        rot_y = rotation_y.unsqueeze(1)  # (N, 1)
+        cos_ry = torch.cos(rot_y)
+        sin_ry = torch.sin(rot_y)
+
+        # Rotation matrix around Y axis
+        corners_rotated = torch.zeros_like(corners)
+        corners_rotated[:, :, 0] = cos_ry * corners[:, :, 0] + sin_ry * corners[:, :, 2]
+        corners_rotated[:, :, 1] = corners[:, :, 1]
+        corners_rotated[:, :, 2] = -sin_ry * corners[:, :, 0] + cos_ry * corners[:, :, 2]
+
+        # Translate to location
+        corners_rotated += location.unsqueeze(1)
+
+        return corners_rotated
+
+    @staticmethod
+    def _bev_iou(corners1, corners2):
+        """
+        Compute Bird's Eye View IoU between two sets of 3D boxes.
+        Args:
+            corners1: (N, 8, 3) corners of N boxes
+            corners2: (M, 8, 3) corners of M boxes
+        Returns:
+            iou: (N, M) IoU matrix
+        """
+        if corners1 is None or corners2 is None:
+            return torch.zeros((0, 0))
+        if corners1.shape[0] == 0 or corners2.shape[0] == 0:
+            return torch.zeros((corners1.shape[0], corners2.shape[0]), device=corners1.device)
+
+        # Extract ground plane coordinates (X-Z plane)
+        # Use bottom 4 corners (indices 0-3 are one face)
+        bev1 = corners1[:, :4, [0, 2]]  # (N, 4, 2) - x, z coords
+        bev2 = corners2[:, :4, [0, 2]]  # (M, 4, 2)
+
+        # Compute axis-aligned bounding boxes in BEV
+        min1 = bev1.min(dim=1)[0]  # (N, 2)
+        max1 = bev1.max(dim=1)[0]  # (N, 2)
+        min2 = bev2.min(dim=1)[0]  # (M, 2)
+        max2 = bev2.max(dim=1)[0]  # (M, 2)
+
+        # Compute areas
+        area1 = (max1[:, 0] - min1[:, 0]) * (max1[:, 1] - min1[:, 1])  # (N,)
+        area2 = (max2[:, 0] - min2[:, 0]) * (max2[:, 1] - min2[:, 1])  # (M,)
+
+        # Compute intersection
+        lt = torch.maximum(min1[:, None, :], min2[None, :, :])  # (N, M, 2)
+        rb = torch.minimum(max1[:, None, :], max2[None, :, :])  # (N, M, 2)
+        wh = (rb - lt).clamp(min=0)  # (N, M, 2)
+        inter = wh[:, :, 0] * wh[:, :, 1]  # (N, M)
+
+        # Compute union and IoU
+        union = area1[:, None] + area2[None, :] - inter
+        iou = inter / (union + 1e-7)
+
+        return iou
+
+    @staticmethod
+    def _box3d_iou(corners1, corners2):
+        """
+        Compute 3D IoU between two sets of 3D boxes (simplified axis-aligned approximation).
+        Args:
+            corners1: (N, 8, 3) corners of N boxes
+            corners2: (M, 8, 3) corners of M boxes
+        Returns:
+            iou: (N, M) IoU matrix
+        """
+        if corners1 is None or corners2 is None:
+            return torch.zeros((0, 0))
+        if corners1.shape[0] == 0 or corners2.shape[0] == 0:
+            return torch.zeros((corners1.shape[0], corners2.shape[0]), device=corners1.device)
+
+        # Compute axis-aligned bounding boxes in 3D
+        min1 = corners1.min(dim=1)[0]  # (N, 3)
+        max1 = corners1.max(dim=1)[0]  # (N, 3)
+        min2 = corners2.min(dim=1)[0]  # (M, 3)
+        max2 = corners2.max(dim=1)[0]  # (M, 3)
+
+        # Compute volumes
+        vol1 = ((max1 - min1).prod(dim=1))  # (N,)
+        vol2 = ((max2 - min2).prod(dim=1))  # (M,)
+
+        # Compute intersection
+        lt = torch.maximum(min1[:, None, :], min2[None, :, :])  # (N, M, 3)
+        rb = torch.minimum(max1[:, None, :], max2[None, :, :])  # (N, M, 3)
+        whl = (rb - lt).clamp(min=0)  # (N, M, 3)
+        inter = whl.prod(dim=2)  # (N, M)
+
+        # Compute union and IoU
+        union = vol1[:, None] + vol2[None, :] - inter
+        iou = inter / (union + 1e-7)
+
+        return iou
+
     def _convert_pred_params(self, params):
         """Convert raw network outputs into physical depth/dimension/rotation values."""
         if params is None or params.shape[1] < self.n3d:
@@ -247,9 +369,42 @@ class Detection3DValidator(DetectionValidator):
             extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
             pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
 
-            ious = box_iou(pred_boxes, gt_bbox) if gt_bbox.numel() else torch.zeros(
-                (pred_boxes.shape[0], 0), device=pred_boxes.device
-            )
+            # Compute 3D IoU for KITTI matching (instead of 2D IoU)
+            pred_corners = None
+            gt_corners = None
+            iou_3d = None
+            iou_bev = None
+
+            if pred_depth is not None and pred_dims is not None and pred_rot is not None:
+                # Build predicted 3D locations from 2D boxes and depth
+                # Simplified: use image center projection (proper method needs calibration)
+                pred_loc = torch.zeros((pred.shape[0], 3), device=pred.device, dtype=pred.dtype)
+                pred_loc[:, 2] = pred_depth  # Z (depth)
+                # X and Y would need proper back-projection with calibration matrix
+                # For now, use simplified approximation
+                pred_loc[:, 0] = (pred_boxes[:, 0] + pred_boxes[:, 2]) / 2 - 0.5  # Normalized X
+                pred_loc[:, 1] = (pred_boxes[:, 1] + pred_boxes[:, 3]) / 2 - 0.5  # Normalized Y
+
+                pred_corners = self._boxes3d_to_corners(pred_loc, pred_dims, pred_rot)
+
+            if gt_loc is not None and gt_dims is not None and gt_rot is not None:
+                # Convert gt_rot to proper shape if needed
+                gt_rot_reshaped = gt_rot if gt_rot.dim() == 1 else gt_rot.squeeze(-1)
+                gt_corners = self._boxes3d_to_corners(gt_loc, gt_dims, gt_rot_reshaped)
+
+            # Compute 3D and BEV IoU
+            if pred_corners is not None and gt_corners is not None:
+                iou_3d = self._box3d_iou(pred_corners, gt_corners)
+                iou_bev = self._bev_iou(pred_corners, gt_corners)
+
+            # Use 3D IoU for matching if available, otherwise fall back to 2D
+            if iou_3d is not None:
+                ious = iou_3d
+            else:
+                ious = box_iou(pred_boxes, gt_bbox) if gt_bbox.numel() else torch.zeros(
+                    (pred_boxes.shape[0], 0), device=pred_boxes.device
+                )
+
             order = torch.argsort(confidences, descending=True)
 
             for diff in self.difficulties:
