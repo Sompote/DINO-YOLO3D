@@ -76,24 +76,17 @@ def compute_3d_box_corners(location, dimensions, rotation_y):
     return corners_3d
 
 
-def project_3d_to_2d(corners_3d, P=None):
+def project_3d_to_2d(corners_3d, P):
     """
     Project 3D corners to 2D image plane using camera projection matrix.
 
     Args:
         corners_3d: (8, 3) array of 3D corners
-        P: (3, 4) camera projection matrix
+        P: (3, 4) camera projection matrix (required)
 
     Returns:
         corners_2d: (8, 2) array of 2D pixel coordinates
     """
-    if P is None:
-        # Default KITTI P2 calibration matrix
-        P = np.array([
-            [721.5377, 0.0, 609.5593, 44.85728],
-            [0.0, 721.5377, 172.854, 0.2163791],
-            [0.0, 0.0, 1.0, 0.002745884]
-        ])
 
     # Convert to homogeneous coordinates
     corners_3d_homo = np.hstack([corners_3d, np.ones((8, 1))])  # (8, 4)
@@ -109,9 +102,9 @@ def project_3d_to_2d(corners_3d, P=None):
 
 def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
     """
-    Draw proper KITTI-style 3D bounding box using camera projection.
+    Draw simplified 3D bounding box aligned with 2D box.
 
-    Based on: https://github.com/ehsanrs2/Kitti-3D-bounding-box
+    Uses 2D box as front face and projects backward based on depth and rotation.
 
     Args:
         img: Image array
@@ -121,81 +114,69 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
         rotation: Rotation angle in radians (rotation_y)
         color: Box color tuple (B, G, R)
         thickness: Line thickness
-        P: Camera projection matrix (3, 4)
+        P: Camera projection matrix (unused, for compatibility)
     """
     # Validate inputs
     if depth <= 0 or depth > 100:
-        # Invalid depth, skip drawing
         return img
 
-    # Use default KITTI P2 matrix if not provided
-    if P is None:
-        P = np.array([
-            [721.5377, 0.0, 609.5593, 44.85728],
-            [0.0, 721.5377, 172.854, 0.2163791],
-            [0.0, 0.0, 1.0, 0.002745884]
-        ])
-
-    # Back-project 2D bottom center to 3D location
-    # In KITTI, location is the bottom center of the 3D box
-    x1, y1, x2, y2 = box_2d
-    cx_2d = (x1 + x2) / 2
-    # Use bottom of 2D box for y (more accurate for ground plane objects)
-    cy_2d = y2  # bottom of box
-
-    fx, fy = P[0, 0], P[1, 1]
-    cx_cam, cy_cam = P[0, 2], P[1, 2]
-
-    # Compute 3D location from 2D projection and depth
-    # location_3d = (2D_point - camera_center) * depth / focal_length
-    x_3d = (cx_2d - cx_cam) * depth / fx
-    y_3d = (cy_2d - cy_cam) * depth / fy
-    z_3d = depth
-
-    location = np.array([x_3d, y_3d, z_3d])
-
-    # Compute 3D box corners
     try:
-        corners_3d = compute_3d_box_corners(location, dims, rotation)
+        x1, y1, x2, y2 = box_2d
+        w_2d = x2 - x1
+        h_2d = y2 - y1
 
-        # Project to 2D
-        corners_2d = project_3d_to_2d(corners_3d, P)
+        # Compute depth offset based on object depth (perspective effect)
+        # Normalize depth to 0-1 range and scale by box size
+        depth_factor = min(depth / 50.0, 1.0)  # Normalize to 0-1
 
-        # Check if corners are within reasonable bounds
-        if np.any(corners_2d < -1000) or np.any(corners_2d > 10000):
-            # Projection failed, skip
-            return img
+        # Use rotation to determine left/right offset direction
+        # rotation_y near 0 or ±π means object is facing camera (small offset)
+        # rotation_y near ±π/2 means object is sideways (larger offset)
+        rot_normalized = abs(rotation) / np.pi  # 0 to 1
+        lateral_offset = w_2d * 0.3 * depth_factor * (1 - rot_normalized)
 
-        # Draw the 3D box
-        # Bottom face: 0-1-2-3
-        # Top face: 4-5-6-7
-        # Vertical edges: 0-4, 1-5, 2-6, 3-7
+        # Vertical offset (objects further away have less parallax)
+        vertical_offset = -h_2d * 0.2 * depth_factor
 
-        # Draw all edges with normal thickness
-        edges = [
-            # Bottom face
-            (0, 1), (1, 2), (2, 3), (3, 0),
-            # Top face
-            (4, 5), (5, 6), (6, 7), (7, 4),
-            # Vertical edges
-            (0, 4), (1, 5), (2, 6), (3, 7)
-        ]
+        # Determine offset direction based on rotation
+        if rotation > 0:
+            dx = -lateral_offset  # Offset to left
+        else:
+            dx = lateral_offset   # Offset to right
 
-        for start, end in edges:
-            pt1 = tuple(corners_2d[start])
-            pt2 = tuple(corners_2d[end])
-            cv2.line(img, pt1, pt2, color, thickness)
+        dy = vertical_offset
 
-        # Optionally highlight front face
-        # Front face: 0-1-5-4 (facing camera)
-        front_edges = [(0, 1), (1, 5), (5, 4), (4, 0)]
-        for start, end in front_edges:
-            pt1 = tuple(corners_2d[start])
-            pt2 = tuple(corners_2d[end])
-            cv2.line(img, pt1, pt2, color, thickness + 1)
+        # Front face corners (use 2D box exactly)
+        front_bottom_left = (int(x1), int(y2))
+        front_bottom_right = (int(x2), int(y2))
+        front_top_right = (int(x2), int(y1))
+        front_top_left = (int(x1), int(y1))
+
+        # Back face corners (offset from front face)
+        back_bottom_left = (int(x1 + dx), int(y2 + dy))
+        back_bottom_right = (int(x2 + dx), int(y2 + dy))
+        back_top_right = (int(x2 + dx), int(y1 + dy))
+        back_top_left = (int(x1 + dx), int(y1 + dy))
+
+        # Draw back face
+        cv2.line(img, back_bottom_left, back_bottom_right, color, thickness)
+        cv2.line(img, back_bottom_right, back_top_right, color, thickness)
+        cv2.line(img, back_top_right, back_top_left, color, thickness)
+        cv2.line(img, back_top_left, back_bottom_left, color, thickness)
+
+        # Draw connecting edges (front to back)
+        cv2.line(img, front_bottom_left, back_bottom_left, color, thickness)
+        cv2.line(img, front_bottom_right, back_bottom_right, color, thickness)
+        cv2.line(img, front_top_right, back_top_right, color, thickness)
+        cv2.line(img, front_top_left, back_top_left, color, thickness)
+
+        # Draw front face (thicker to highlight)
+        cv2.line(img, front_bottom_left, front_bottom_right, color, thickness + 1)
+        cv2.line(img, front_bottom_right, front_top_right, color, thickness + 1)
+        cv2.line(img, front_top_right, front_top_left, color, thickness + 1)
+        cv2.line(img, front_top_left, front_bottom_left, color, thickness + 1)
 
     except Exception as e:
-        # If projection fails, silently skip
         pass
 
     return img
