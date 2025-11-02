@@ -768,10 +768,24 @@ class v8Detection3DLoss(v8DetectionLoss):
         loss = torch.zeros(6, device=self.device)
 
         # Get predictions
-        # preds is a tuple: (feats, params_3d)
-        # feats is a list of feature maps from Detect.forward()
-        # params_3d is the 3D parameters tensor
-        feats, params_3d = preds
+        # preds should provide (feature_maps, params_3d) but can arrive nested from different runners.
+        if isinstance(preds, (list, tuple)):
+            if isinstance(preds[0], list):
+                feats = preds[0]
+                params_3d = preds[1] if len(preds) > 1 else None
+            else:
+                # e.g. (y, (feats, params)) structure from export helpers
+                feats, params_3d = preds[-1]
+        else:
+            feats, params_3d = preds
+
+        if isinstance(params_3d, (list, tuple)):
+            params_3d = params_3d[0]
+        if params_3d is None:
+            raise ValueError("3D detection head did not return params_3d predictions.")
+
+        if not isinstance(params_3d, torch.Tensor):
+            params_3d = torch.as_tensor(params_3d, device=self.device)
         batch_size = params_3d.shape[0]
 
         # Split 2D predictions
