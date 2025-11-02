@@ -41,65 +41,141 @@ from ultralytics.utils import LOGGER
 from ultralytics.utils.plotting import Annotator, Colors
 
 
-def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2):
+def compute_3d_box_corners(location, dimensions, rotation_y):
     """
-    Draw a 3D bounding box projection on the image.
+    Compute 3D bounding box corners in camera coordinates (KITTI format).
+
+    Args:
+        location: [x, y, z] - center bottom of 3D box in camera coords
+        dimensions: [h, w, l] - height, width, length
+        rotation_y: rotation around Y-axis in radians
+
+    Returns:
+        corners_3d: (8, 3) array of corner coordinates
+    """
+    h, w, l = dimensions
+
+    # 3D box corners in object coordinate system (before rotation)
+    # Bottom face center is at origin, extends downward (y-down in camera)
+    x_corners = np.array([l/2, l/2, -l/2, -l/2, l/2, l/2, -l/2, -l/2])
+    y_corners = np.array([0, 0, 0, 0, -h, -h, -h, -h])
+    z_corners = np.array([w/2, -w/2, -w/2, w/2, w/2, -w/2, -w/2, w/2])
+
+    # Rotation matrix around Y-axis
+    R = np.array([
+        [np.cos(rotation_y), 0, np.sin(rotation_y)],
+        [0, 1, 0],
+        [-np.sin(rotation_y), 0, np.cos(rotation_y)]
+    ])
+
+    # Rotate and translate
+    corners_3d = np.vstack([x_corners, y_corners, z_corners])  # (3, 8)
+    corners_3d = R @ corners_3d
+    corners_3d = corners_3d.T + location  # (8, 3)
+
+    return corners_3d
+
+
+def project_3d_to_2d(corners_3d, P=None):
+    """
+    Project 3D corners to 2D image plane using camera projection matrix.
+
+    Args:
+        corners_3d: (8, 3) array of 3D corners
+        P: (3, 4) camera projection matrix
+
+    Returns:
+        corners_2d: (8, 2) array of 2D pixel coordinates
+    """
+    if P is None:
+        # Default KITTI P2 calibration matrix
+        P = np.array([
+            [721.5377, 0.0, 609.5593, 44.85728],
+            [0.0, 721.5377, 172.854, 0.2163791],
+            [0.0, 0.0, 1.0, 0.002745884]
+        ])
+
+    # Convert to homogeneous coordinates
+    corners_3d_homo = np.hstack([corners_3d, np.ones((8, 1))])  # (8, 4)
+
+    # Project: corners_2d_homo = P @ corners_3d_homo^T
+    corners_2d_homo = (P @ corners_3d_homo.T).T  # (8, 3)
+
+    # Normalize by depth
+    corners_2d = corners_2d_homo[:, :2] / corners_2d_homo[:, 2:3]
+
+    return corners_2d.astype(np.int32)
+
+
+def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
+    """
+    Draw proper KITTI-style 3D bounding box using camera projection.
+
+    Based on: https://github.com/ehsanrs2/Kitti-3D-bounding-box
 
     Args:
         img: Image array
         box_2d: 2D bounding box (x1, y1, x2, y2)
-        depth: Object depth in meters
+        depth: Object depth in meters (z-coordinate)
         dims: Object dimensions [h, w, l] in meters
-        rotation: Rotation angle in radians
+        rotation: Rotation angle in radians (rotation_y)
         color: Box color tuple (B, G, R)
         thickness: Line thickness
+        P: Camera projection matrix (3, 4)
     """
+    # Use default KITTI P2 matrix if not provided
+    if P is None:
+        P = np.array([
+            [721.5377, 0.0, 609.5593, 44.85728],
+            [0.0, 721.5377, 172.854, 0.2163791],
+            [0.0, 0.0, 1.0, 0.002745884]
+        ])
+
+    # Back-project 2D center to 3D location
     x1, y1, x2, y2 = box_2d
-    cx = (x1 + x2) / 2
-    cy = (y1 + y2) / 2
+    cx_2d = (x1 + x2) / 2
+    cy_2d = (y1 + y2) / 2
 
-    h, w, l = dims
+    fx, fy = P[0, 0], P[1, 1]
+    cx, cy = P[0, 2], P[1, 2]
 
-    # Scale factor based on depth (perspective)
-    scale = max(0.3, 1.0 - depth / 100.0)
+    # Compute 3D center from 2D center and depth
+    x_3d = (cx_2d - cx) * depth / fx
+    y_3d = (cy_2d - cy) * depth / fy
+    z_3d = depth
 
-    # Define 3D box corners (8 corners)
-    # Front face (4 corners) and back face (4 corners)
-    corners_3d = np.array([
-        [-l/2, -h/2, -w/2], [l/2, -h/2, -w/2], [l/2, h/2, -w/2], [-l/2, h/2, -w/2],  # Front
-        [-l/2, -h/2, w/2], [l/2, -h/2, w/2], [l/2, h/2, w/2], [-l/2, h/2, w/2]      # Back
-    ])
+    location = np.array([x_3d, y_3d, z_3d])
 
-    # Apply rotation around Y axis
-    cos_r = np.cos(rotation)
-    sin_r = np.sin(rotation)
-    R = np.array([
-        [cos_r, 0, sin_r],
-        [0, 1, 0],
-        [-sin_r, 0, cos_r]
-    ])
-    corners_3d = corners_3d @ R.T
+    # Compute 3D box corners
+    corners_3d = compute_3d_box_corners(location, dims, rotation)
 
-    # Project to image plane (simplified)
-    img_scale = (x2 - x1) / max(l, 0.1) * scale
-    corners_2d = corners_3d[:, [0, 1]] * img_scale
-    corners_2d[:, 0] += cx
-    corners_2d[:, 1] += cy
-    corners_2d = corners_2d.astype(np.int32)
+    # Project to 2D
+    corners_2d = project_3d_to_2d(corners_3d, P)
 
-    # Draw back face (thinner lines)
+    # Draw the 3D box
+    # Face 1 (bottom): 0-1-2-3
+    # Face 2 (top): 4-5-6-7
+    # Edges connect: 0-4, 1-5, 2-6, 3-7
+
+    # Draw bottom face
+    for i in range(4):
+        j = (i + 1) % 4
+        cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[j]), color, thickness)
+
+    # Draw top face
     for i in range(4):
         j = (i + 1) % 4
         cv2.line(img, tuple(corners_2d[4 + i]), tuple(corners_2d[4 + j]), color, thickness)
 
-    # Draw front face (thicker lines)
-    for i in range(4):
-        j = (i + 1) % 4
-        cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[j]), color, thickness + 1)
-
-    # Draw connecting lines
+    # Draw vertical edges
     for i in range(4):
         cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[4 + i]), color, thickness)
+
+    # Highlight front face (facing camera) with thicker lines
+    # Front face indices: 0, 1, 5, 4
+    front_edges = [(0, 1), (1, 5), (5, 4), (4, 0)]
+    for start, end in front_edges:
+        cv2.line(img, tuple(corners_2d[start]), tuple(corners_2d[end]), color, thickness + 1)
 
     return img
 
