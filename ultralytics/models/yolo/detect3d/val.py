@@ -31,32 +31,82 @@ class Detection3DValidator(DetectionValidator):
 
     def preprocess(self, batch):
         """Preprocesses batch of images for YOLO training."""
-        # Ensure batch is a dict (not a tuple or other type)
         if not isinstance(batch, dict):
             raise TypeError(f"Expected batch to be a dict, got {type(batch)}")
+        if "img" not in batch:
+            raise KeyError("Batch is missing required 'img' key for validation.")
 
-        # Check if batch["img"] is a tuple or list (should be a tensor)
-        if "img" in batch:
-            if isinstance(batch["img"], (tuple, list)):
-                # If it's a tuple/list, convert to tensor by stacking
-                batch["img"] = torch.stack(list(batch["img"]), 0)
-            # Also check if it's already a tensor but needs to be stacked
-            elif isinstance(batch["img"], torch.Tensor) and batch["img"].dim() == 3:
-                # Single image tensor [C, H, W] -> add batch dimension [1, C, H, W]
-                batch["img"] = batch["img"].unsqueeze(0)
+        def _flatten_items(items):
+            for item in items:
+                if isinstance(item, (list, tuple)):
+                    yield from _flatten_items(item)
+                else:
+                    yield item
 
-        # Ensure all batch items that should be tensors are tensors
+        def _ensure_tensor(value, *, stack=False, cat=False):
+            if value is None:
+                return None
+            if isinstance(value, torch.Tensor):
+                if stack and value.dim() == 3:
+                    return value.unsqueeze(0)
+                return value
+            if isinstance(value, (list, tuple)):
+                flattened = list(_flatten_items(value))
+                if not flattened:
+                    return torch.empty(0)
+                tensors = [
+                    item if isinstance(item, torch.Tensor) else torch.as_tensor(item)
+                    for item in flattened
+                ]
+                if stack:
+                    stacked = torch.stack(tensors, dim=0)
+                    if stacked.dim() == 3:
+                        stacked = stacked.unsqueeze(0)
+                    return stacked
+                if cat:
+                    try:
+                        return torch.cat(tensors, dim=0)
+                    except RuntimeError:
+                        return torch.stack(tensors, dim=0)
+                return torch.as_tensor(tensors)
+            tensor = torch.as_tensor(value)
+            if stack and tensor.dim() == 3:
+                tensor = tensor.unsqueeze(0)
+            return tensor
+
+        batch["img"] = _ensure_tensor(batch["img"], stack=True)
+        if not isinstance(batch["img"], torch.Tensor):
+            raise TypeError(f"Unable to convert batch['img'] to tensor (got {type(batch['img'])}).")
+        if batch["img"].dim() == 3:
+            batch["img"] = batch["img"].unsqueeze(0)
+        elif batch["img"].dim() > 4:
+            batch["img"] = batch["img"].reshape(-1, *batch["img"].shape[-3:])
+
         for key in ["batch_idx", "cls", "bboxes"]:
-            if key in batch and not isinstance(batch[key], torch.Tensor):
-                if isinstance(batch[key], (list, tuple)):
-                    batch[key] = torch.cat([x if isinstance(x, torch.Tensor) else torch.tensor(x) for x in batch[key]], 0)
+            if key in batch:
+                batch[key] = _ensure_tensor(batch[key], cat=True)
 
-        batch = super().preprocess(batch)
+        batch["img"] = batch["img"].to(self.device, non_blocking=True)
+        batch["img"] = (batch["img"].half() if self.args.half else batch["img"].float()) / 255
 
-        # Move 3D annotations to device (check they exist and are tensors)
+        for key in ["batch_idx", "cls", "bboxes"]:
+            if key in batch and isinstance(batch[key], torch.Tensor):
+                batch[key] = batch[key].to(self.device)
+
+        if self.args.save_hybrid and "bboxes" in batch and "cls" in batch:
+            height, width = batch["img"].shape[2:]
+            nb = len(batch["img"])
+            bboxes = batch["bboxes"] * torch.tensor((width, height, width, height), device=self.device)
+            self.lb = [
+                torch.cat([batch["cls"][batch["batch_idx"] == i], bboxes[batch["batch_idx"] == i]], dim=-1)
+                for i in range(nb)
+            ]
+
         for key in ["dimensions_3d", "location_3d", "rotation_y", "alpha"]:
-            if key in batch and batch[key] is not None and hasattr(batch[key], 'to'):
-                batch[key] = batch[key].to(self.device, non_blocking=True)
+            if key in batch and batch[key] is not None:
+                batch[key] = _ensure_tensor(batch[key], cat=True)
+                if isinstance(batch[key], torch.Tensor):
+                    batch[key] = batch[key].to(self.device, non_blocking=True).float()
 
         return batch
 
