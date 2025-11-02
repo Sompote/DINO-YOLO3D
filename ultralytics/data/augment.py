@@ -2075,7 +2075,15 @@ class Format:
             labels["batch_idx"] = torch.zeros(nl)
 
         # Preserve 3D annotations if they exist (for KITTI 3D detection)
-        for key, shape in [("dimensions_3d", 3), ("location_3d", 3), ("rotation_y", 1), ("alpha", 1)]:
+        for key, shape in [
+            ("dimensions_3d", 3),
+            ("location_3d", 3),
+            ("rotation_y", 1),
+            ("alpha", 1),
+            ("truncation", 1),
+            ("occlusion", 1),
+            ("bbox_height", 1),
+        ]:
             if key in labels:
                 val = labels[key]
                 if isinstance(val, np.ndarray) and len(val) > 0:

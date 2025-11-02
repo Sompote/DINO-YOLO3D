@@ -239,7 +239,21 @@ class YOLODataset(BaseDataset):
             value = values[i]
             if k == "img":
                 value = torch.stack(value, 0)
-            if k in {"masks", "keypoints", "bboxes", "cls", "segments", "obb", "dimensions_3d", "location_3d", "rotation_y", "alpha"}:
+            if k in {
+                "masks",
+                "keypoints",
+                "bboxes",
+                "cls",
+                "segments",
+                "obb",
+                "dimensions_3d",
+                "location_3d",
+                "rotation_y",
+                "alpha",
+                "truncation",
+                "occlusion",
+                "bbox_height",
+            }:
                 value = torch.cat(value, 0)
             new_batch[k] = value
         new_batch["batch_idx"] = list(new_batch["batch_idx"])
@@ -675,6 +689,9 @@ class KITTIDataset(YOLODataset):
             location_3d_list = []
             rotation_y_list = []
             alpha_list = []
+            truncation_list = []
+            occlusion_list = []
+            bbox_height_list = []
 
             # KITTI class name to ID mapping (customize based on your needs)
             kitti_classes = {
@@ -717,6 +734,7 @@ class KITTIDataset(YOLODataset):
                 alpha = float(parts[3])
 
                 # Normalize 2D bbox to [0, 1]
+                height_px = y2 - y1
                 x1, y1, x2, y2 = bbox_2d
                 w, h = shape
                 x_center = ((x1 + x2) / 2) / w
@@ -730,6 +748,9 @@ class KITTIDataset(YOLODataset):
                 location_3d_list.append(location_3d)
                 rotation_y_list.append(rotation_y)
                 alpha_list.append(alpha)
+                truncation_list.append(float(parts[1]))
+                occlusion_list.append(float(parts[2]))
+                bbox_height_list.append(height_px)
 
             if len(cls_list) == 0:
                 ne = 1  # no valid objects
@@ -745,6 +766,9 @@ class KITTIDataset(YOLODataset):
                 "location_3d": np.array(location_3d_list),  # [x, y, z]
                 "rotation_y": np.array(rotation_y_list).reshape(-1, 1),
                 "alpha": np.array(alpha_list).reshape(-1, 1),
+                "truncation": np.array(truncation_list, dtype=np.float32).reshape(-1, 1),
+                "occlusion": np.array(occlusion_list, dtype=np.float32).reshape(-1, 1),
+                "bbox_height": np.array(bbox_height_list, dtype=np.float32).reshape(-1, 1),
                 "segments": [],
                 "keypoints": None,
                 "normalized": True,
