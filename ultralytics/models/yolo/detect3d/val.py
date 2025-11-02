@@ -40,6 +40,16 @@ class Detection3DValidator(DetectionValidator):
             if isinstance(batch["img"], (tuple, list)):
                 # If it's a tuple/list, convert to tensor by stacking
                 batch["img"] = torch.stack(list(batch["img"]), 0)
+            # Also check if it's already a tensor but needs to be stacked
+            elif isinstance(batch["img"], torch.Tensor) and batch["img"].dim() == 3:
+                # Single image tensor [C, H, W] -> add batch dimension [1, C, H, W]
+                batch["img"] = batch["img"].unsqueeze(0)
+
+        # Ensure all batch items that should be tensors are tensors
+        for key in ["batch_idx", "cls", "bboxes"]:
+            if key in batch and not isinstance(batch[key], torch.Tensor):
+                if isinstance(batch[key], (list, tuple)):
+                    batch[key] = torch.cat([x if isinstance(x, torch.Tensor) else torch.tensor(x) for x in batch[key]], 0)
 
         batch = super().preprocess(batch)
 
