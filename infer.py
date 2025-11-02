@@ -242,7 +242,7 @@ def run_inference(
                 h, w, l = float(box[7]), float(box[8]), float(box[9])
                 rot = float(box[10])
                 label += f"\nD:{depth:.1f}m H:{h:.1f}m W:{w:.1f}m L:{l:.1f}m"
-                label += f"\nR:{math.degrees(rot):.1f}°"
+                label += f"\nR:{math.degrees(rot):.1f}deg"  # Use 'deg' instead of ° symbol
 
             # Draw 2D box
             annotator.box_label(xyxy, label, color=color)
