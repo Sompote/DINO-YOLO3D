@@ -1002,9 +1002,10 @@ class Boxes(BaseTensor):
         if boxes.ndim == 1:
             boxes = boxes[None, :]
         n = boxes.shape[-1]
-        assert n in {6, 7}, f"expected 6 or 7 values but got {n}"  # xyxy, track_id, conf, cls
+        assert n in {6, 7, 11}, f"expected 6, 7, or 11 values but got {n}"  # xyxy, track_id, conf, cls, 3d_params
         super().__init__(boxes, orig_shape)
         self.is_track = n == 7
+        self.is_3d = n == 11  # 3D detection: [xyxy, conf, cls, depth, h_3d, w_3d, l_3d, rotation_y]
         self.orig_shape = orig_shape
 
     @property
@@ -1039,7 +1040,10 @@ class Boxes(BaseTensor):
             >>> print(conf_scores)
             tensor([0.9000])
         """
-        return self.data[:, -2]
+        if self.is_3d:
+            return self.data[:, 4]  # For 3D: [xyxy, conf, cls, 3d_params]
+        else:
+            return self.data[:, -2]  # For standard/tracking: conf is second from last
 
     @property
     def cls(self):
@@ -1056,7 +1060,10 @@ class Boxes(BaseTensor):
             >>> class_ids = boxes.cls
             >>> print(class_ids)  # tensor([0., 2., 1.])
         """
-        return self.data[:, -1]
+        if self.is_3d:
+            return self.data[:, 5]  # For 3D: [xyxy, conf, cls, 3d_params]
+        else:
+            return self.data[:, -1]  # For standard/tracking: cls is last
 
     @property
     def id(self):
@@ -1082,6 +1089,39 @@ class Boxes(BaseTensor):
             - The tracking IDs are typically used to associate detections across multiple frames in video analysis.
         """
         return self.data[:, -3] if self.is_track else None
+
+    @property
+    def depth(self):
+        """
+        Returns the depth values for 3D detection boxes.
+
+        Returns:
+            (torch.Tensor | None): Depth values in meters for each box if 3D detection is enabled,
+                otherwise None. Shape is (N,) where N is the number of boxes.
+        """
+        return self.data[:, 6] if self.is_3d else None
+
+    @property
+    def dimensions_3d(self):
+        """
+        Returns the 3D dimensions (height, width, length) for 3D detection boxes.
+
+        Returns:
+            (torch.Tensor | None): 3D dimensions [h, w, l] in meters for each box if 3D detection is enabled,
+                otherwise None. Shape is (N, 3) where N is the number of boxes.
+        """
+        return self.data[:, 7:10] if self.is_3d else None
+
+    @property
+    def rotation_y(self):
+        """
+        Returns the rotation angles around Y-axis for 3D detection boxes.
+
+        Returns:
+            (torch.Tensor | None): Rotation angles in radians for each box if 3D detection is enabled,
+                otherwise None. Shape is (N,) where N is the number of boxes.
+        """
+        return self.data[:, 10] if self.is_3d else None
 
     @property
     @lru_cache(maxsize=2)  # maxsize 1 should suffice
