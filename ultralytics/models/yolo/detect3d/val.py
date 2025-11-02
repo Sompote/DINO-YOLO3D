@@ -126,14 +126,28 @@ class Detection3DValidator(DetectionValidator):
     def postprocess(self, preds):
         """Apply Non-maximum suppression to prediction outputs."""
         # Handle 3D predictions
-        if isinstance(preds, tuple):
-            preds_2d, preds_3d = preds[0], preds[1]
+        preds_3d = None
+        if isinstance(preds, (list, tuple)):
+            preds_2d = preds[0]
+            extra = preds[1] if len(preds) > 1 else None
+            if isinstance(extra, (list, tuple)):
+                # Expect tuple like (features, params_3d)
+                if extra and isinstance(extra[-1], torch.Tensor):
+                    preds_3d = extra[-1]
+            elif isinstance(extra, torch.Tensor):
+                preds_3d = extra
         else:
             preds_2d = preds
-            preds_3d = None
+
+        if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
+            # Append raw 3D params as additional channels so NMS keeps them
+            params = preds_3d.permute(0, 2, 1).contiguous()
+            if params.shape[0] == preds_2d.shape[0] and params.shape[1] == preds_2d.shape[1]:
+                preds_2d = torch.cat([preds_2d, params], dim=2)
 
         # Apply NMS on 2D predictions
-        return super().postprocess(preds_2d)
+        outputs = super().postprocess(preds_2d)
+        return outputs
 *** End Patch
 *** Insert After: Line 75
     def init_metrics(self, model):
