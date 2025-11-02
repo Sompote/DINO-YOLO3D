@@ -214,6 +214,9 @@ def cmd_train(args):
         return 0
 
     except Exception as e:
+        import traceback
+
+        traceback.print_exc()
         print_error(f"Training failed: {e}")
         return 1
     finally:
