@@ -757,15 +757,15 @@ class v8Detection3DLoss(v8DetectionLoss):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
         # Weight factors for 3D losses (reduced to balance with 2D losses)
-        # Log-space depth loss is already smaller, but we still scale it down
-        self.depth_weight = 0.5  # Reduced from 1.0
-        self.dim_weight = 0.5    # Reduced from 1.0 (normalized to [0,1] range)
-        self.rot_weight = 1.0     # Keep rotation weight at 1.0
+        self.loc_weight = 0.5    # Weight for x, y location losses
+        self.depth_weight = 0.5  # Weight for z (depth) loss
+        self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0,1] range)
+        self.rot_weight = 1.0    # Weight for rotation loss
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
-        # loss indices: 0=box, 1=cls, 2=dfl, 3=depth, 4=dim, 5=rot
-        loss = torch.zeros(6, device=self.device)
+        # loss indices: 0=box, 1=cls, 2=dfl, 3=loc_x, 4=loc_y, 5=depth, 6=dim, 7=rot
+        loss = torch.zeros(8, device=self.device)
 
         # Get predictions
         # preds should provide (feature_maps, params_3d) but can arrive nested from different runners.
@@ -836,19 +836,21 @@ class v8Detection3DLoss(v8DetectionLoss):
             # 3D losses (only for positive samples)
             if "dimensions_3d" in batch and "rotation_y" in batch and "location_3d" in batch:
                 # Get 3D ground truth from batch (flat tensors concatenated across all images)
+                # location_3d shape: [N_total, 3] -> [x, y, z]
                 # dimensions_3d shape: [N_total, 3] -> [h, w, l]
-                # location_3d shape: [N_total, 3] -> [x, y, z] (we mainly care about z for depth)
                 # rotation_y shape: [N_total, 1]
                 batch_idx_gt = batch["batch_idx"].view(-1).long().to(self.device)
                 # Convert to same dtype as params_3d for AMP compatibility
-                gt_depth_flat = batch["location_3d"].to(self.device, dtype=params_3d.dtype)[:, 2:3]  # z coordinate
+                gt_loc_flat = batch["location_3d"].to(self.device, dtype=params_3d.dtype)  # [x, y, z]
                 gt_dims_flat = batch["dimensions_3d"].to(self.device, dtype=params_3d.dtype)  # [h,w,l]
                 gt_rot_flat = batch["rotation_y"].to(self.device, dtype=params_3d.dtype)
 
                 # Assign 3D targets to positive anchors
-                target_depth = torch.zeros_like(params_3d[:, :, 0:1])
-                target_dims = torch.zeros_like(params_3d[:, :, 1:4])
-                target_rot = torch.zeros_like(params_3d[:, :, 4:5])
+                target_loc_x = torch.zeros_like(params_3d[:, :, 0:1])
+                target_loc_y = torch.zeros_like(params_3d[:, :, 1:2])
+                target_depth = torch.zeros_like(params_3d[:, :, 2:3])
+                target_dims = torch.zeros_like(params_3d[:, :, 3:6])
+                target_rot = torch.zeros_like(params_3d[:, :, 6:7])
 
                 # For each image in batch, assign targets
                 for i in range(batch_size):
@@ -877,22 +879,55 @@ class v8Detection3DLoss(v8DetectionLoss):
 
                     # Assign 3D targets
                     fg_positions = img_fg_mask.nonzero(as_tuple=False).squeeze(1)[valid_idx]
-                    target_depth[i, fg_positions] = gt_depth_flat[gt_indices_global]
+                    target_loc_x[i, fg_positions] = gt_loc_flat[gt_indices_global, 0:1]
+                    target_loc_y[i, fg_positions] = gt_loc_flat[gt_indices_global, 1:2]
+                    target_depth[i, fg_positions] = gt_loc_flat[gt_indices_global, 2:3]
                     target_dims[i, fg_positions] = gt_dims_flat[gt_indices_global]
                     target_rot[i, fg_positions] = gt_rot_flat[gt_indices_global]
 
-                # Extract predicted 3D parameters
-                # Use log-space for depth to handle large value ranges better
-                pred_depth = params_3d[:, :, 0:1].sigmoid() * 100  # [0, 100m]
-                pred_dims = params_3d[:, :, 1:4].sigmoid() * 10  # [0, 10m]
-                pred_rot = (params_3d[:, :, 4:5].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
+                # Extract predicted 3D parameters [x, y, z, h, w, l, rot_y]
+                pred_loc_x = (params_3d[:, :, 0:1].sigmoid() - 0.5) * 100  # [-50m, 50m]
+                pred_loc_y = (params_3d[:, :, 1:2].sigmoid() - 0.5) * 100  # [-50m, 50m]
+                pred_depth = params_3d[:, :, 2:3].sigmoid() * 100  # [0, 100m]
+                pred_dims = params_3d[:, :, 3:6].sigmoid() * 10  # [0, 10m]
+                pred_rot = (params_3d[:, :, 6:7].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
 
                 # Ensure targets have same dtype as predictions (for AMP compatibility)
+                target_loc_x = target_loc_x.to(pred_loc_x.dtype)
+                target_loc_y = target_loc_y.to(pred_loc_y.dtype)
                 target_depth = target_depth.to(pred_depth.dtype)
                 target_dims = target_dims.to(pred_dims.dtype)
                 target_rot = target_rot.to(pred_rot.dtype)
 
-                # Depth loss (using log-space to reduce gradient magnitude)
+                # Location X loss (L1 loss)
+                if fg_mask.sum() > 0:
+                    # Filter out invalid location values
+                    valid_loc_x_mask = (target_loc_x[fg_mask].abs() < 100)
+                    if valid_loc_x_mask.sum() > 0:
+                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask]
+                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask]
+
+                        loss[3] = (
+                            self.loc_weight
+                            * torch.nn.functional.l1_loss(pred_loc_x_valid, target_loc_x_valid, reduction="sum")
+                            / target_scores_sum
+                        )
+
+                # Location Y loss (L1 loss)
+                if fg_mask.sum() > 0:
+                    # Filter out invalid location values
+                    valid_loc_y_mask = (target_loc_y[fg_mask].abs() < 100)
+                    if valid_loc_y_mask.sum() > 0:
+                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask]
+                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask]
+
+                        loss[4] = (
+                            self.loc_weight
+                            * torch.nn.functional.l1_loss(pred_loc_y_valid, target_loc_y_valid, reduction="sum")
+                            / target_scores_sum
+                        )
+
+                # Depth (Z) loss (using log-space to reduce gradient magnitude)
                 if fg_mask.sum() > 0:
                     # Filter out invalid depth values (negative or extremely large values indicate DontCare)
                     valid_depth_mask = (target_depth[fg_mask] > 0) & (target_depth[fg_mask] < 200)
@@ -905,7 +940,7 @@ class v8Detection3DLoss(v8DetectionLoss):
                         pred_depth_log = torch.log(pred_depth_valid + 1.0)
                         target_depth_log = torch.log(target_depth_valid + 1.0)
 
-                        loss[3] = (
+                        loss[5] = (
                             self.depth_weight
                             * torch.nn.functional.l1_loss(pred_depth_log, target_depth_log, reduction="sum")
                             / target_scores_sum
@@ -920,7 +955,7 @@ class v8Detection3DLoss(v8DetectionLoss):
                         pred_dims_valid = pred_dims[fg_mask][valid_dim_mask.squeeze(-1)] / 10.0
                         target_dims_valid = target_dims[fg_mask][valid_dim_mask.squeeze(-1)] / 10.0
 
-                        loss[4] = (
+                        loss[6] = (
                             self.dim_weight
                             * torch.nn.functional.l1_loss(pred_dims_valid, target_dims_valid, reduction="sum")
                             / target_scores_sum
@@ -934,7 +969,7 @@ class v8Detection3DLoss(v8DetectionLoss):
                     target_rot_sin = torch.sin(target_rot[fg_mask])
                     target_rot_cos = torch.cos(target_rot[fg_mask])
 
-                    loss[5] = (
+                    loss[7] = (
                         self.rot_weight
                         * (
                             torch.nn.functional.smooth_l1_loss(pred_rot_sin, target_rot_sin, reduction="sum")

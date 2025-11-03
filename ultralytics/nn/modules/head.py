@@ -233,8 +233,8 @@ class Detect3D(Detect):
     def __init__(self, nc=80, ch=()):
         """Initialize 3D detection head with number of classes `nc` and layer channels `ch`."""
         super().__init__(nc, ch)
-        # 3D box parameters: depth (1), 3D dimensions (3), rotation_y (1) = 5 extra parameters
-        self.n3d = 5  # depth, height_3d, width_3d, length_3d, rotation_y
+        # 3D box parameters: location_3d (3), 3D dimensions (3), rotation_y (1) = 7 extra parameters
+        self.n3d = 7  # x, y, z, height_3d, width_3d, length_3d, rotation_y
 
         c4 = max(ch[0] // 4, self.n3d)
         # Additional head for 3D-specific parameters
@@ -243,19 +243,23 @@ class Detect3D(Detect):
     def forward(self, x):
         """Concatenates and returns predicted 2D bounding boxes, class probabilities, and 3D parameters."""
         bs = x[0].shape[0]  # batch size
-        # Predict 3D parameters: [depth, h3d, w3d, l3d, rotation_y]
+        # Predict 3D parameters: [x, y, z, h3d, w3d, l3d, rotation_y]
         params_3d = torch.cat([self.cv4[i](x[i]).view(bs, self.n3d, -1) for i in range(self.nl)], 2)
 
         # Decode 3D parameters for inference
         if not self.training:
-            # depth: positive value
-            depth = params_3d[:, 0:1, :].sigmoid() * 100  # scale to reasonable depth range (0-100m)
+            # location_x: can be negative or positive (-50m to +50m)
+            loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
+            # location_y: can be negative or positive (-50m to +50m)
+            loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
+            # location_z (depth): positive value (0-100m)
+            loc_z = params_3d[:, 2:3, :].sigmoid() * 100
             # 3D dimensions: positive values
-            dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # scale to reasonable size (0-10m)
+            dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # scale to reasonable size (0-10m)
             # rotation_y: -pi to pi
-            rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+            rotation_y = (params_3d[:, 6:7, :].sigmoid() - 0.5) * 2 * math.pi
             # Concatenate decoded parameters
-            params_3d_decoded = torch.cat([depth, dim_3d, rotation_y], 1)
+            params_3d_decoded = torch.cat([loc_x, loc_y, loc_z, dim_3d, rotation_y], 1)
         else:
             params_3d_decoded = params_3d
 
@@ -274,20 +278,22 @@ class Detect3D(Detect):
 
         Args:
             bboxes_2d: 2D bounding boxes [x, y, w, h]
-            params_3d: 3D parameters [depth, h3d, w3d, l3d, rotation_y]
+            params_3d: 3D parameters [x, y, z, h3d, w3d, l3d, rotation_y]
             anchors: anchor points
 
         Returns:
             boxes_3d: 3D bounding box parameters
         """
         # Extract 3D parameters
-        depth = params_3d[:, 0:1, :].sigmoid() * 100
-        dim_3d = params_3d[:, 1:4, :].sigmoid() * 10  # [h, w, l]
-        rotation_y = (params_3d[:, 4:5, :].sigmoid() - 0.5) * 2 * math.pi
+        loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
+        loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
+        loc_z = params_3d[:, 2:3, :].sigmoid() * 100
+        dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # [h, w, l]
+        rotation_y = (params_3d[:, 6:7, :].sigmoid() - 0.5) * 2 * math.pi
 
         # Combine into 3D box representation
-        # Format: [x_2d, y_2d, w_2d, h_2d, depth, h_3d, w_3d, l_3d, rotation_y]
-        boxes_3d = torch.cat([bboxes_2d, depth, dim_3d, rotation_y], dim=1)
+        # Format: [x_2d, y_2d, w_2d, h_2d, x_3d, y_3d, z_3d, h_3d, w_3d, l_3d, rotation_y]
+        boxes_3d = torch.cat([bboxes_2d, loc_x, loc_y, loc_z, dim_3d, rotation_y], dim=1)
         return boxes_3d
 
 
