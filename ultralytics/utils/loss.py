@@ -757,10 +757,10 @@ class v8Detection3DLoss(v8DetectionLoss):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
         # Weight factors for 3D losses (tuned to balance with 2D losses)
-        # Weights adjusted to bring all losses to similar magnitude (4-7 range)
-        self.loc_weight = 1.0    # Weight for x, y location losses (simple normalization ÷20)
-        self.depth_weight = 5.0  # Weight for z (depth) loss (log-space needs higher weight)
-        self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0, 1] range)
+        # All spatial coordinates (x, y, z) use simple division normalization
+        self.loc_weight = 1.0    # Weight for x, y location losses (÷20, range: [-2.5, 2.5])
+        self.depth_weight = 1.0  # Weight for z (depth) loss (÷20, range: [0, 5])
+        self.dim_weight = 0.5    # Weight for dimension loss (÷10, range: [0, 1])
         self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
 
     def __call__(self, preds, batch):
@@ -932,22 +932,19 @@ class v8Detection3DLoss(v8DetectionLoss):
                             / target_scores_sum
                         )
 
-                # Depth (Z) loss (using log-space to reduce gradient magnitude)
+                # Depth (Z) loss (simple normalization, same as x, y)
                 if fg_mask.sum() > 0:
                     # Filter out invalid depth values (negative or extremely large values indicate DontCare)
                     valid_depth_mask = (target_depth[fg_mask] > 0) & (target_depth[fg_mask] < 200)
                     if valid_depth_mask.sum() > 0:
-                        # Use log space for depth: log(pred+1) vs log(target+1)
-                        # This normalizes the loss to [0, ~5] range instead of [0, 100]
-                        pred_depth_valid = pred_depth[fg_mask][valid_depth_mask]
-                        target_depth_valid = target_depth[fg_mask][valid_depth_mask]
-
-                        pred_depth_log = torch.log(pred_depth_valid + 1.0)
-                        target_depth_log = torch.log(target_depth_valid + 1.0)
+                        # Simple normalization: divide by 20 to get range [0, 5]
+                        # Same approach as x, y for consistency across all spatial coordinates
+                        pred_depth_valid = pred_depth[fg_mask][valid_depth_mask] / 20.0
+                        target_depth_valid = target_depth[fg_mask][valid_depth_mask] / 20.0
 
                         loss[5] = (
                             self.depth_weight
-                            * torch.nn.functional.l1_loss(pred_depth_log, target_depth_log, reduction="sum")
+                            * torch.nn.functional.l1_loss(pred_depth_valid, target_depth_valid, reduction="sum")
                             / target_scores_sum
                         )
 
