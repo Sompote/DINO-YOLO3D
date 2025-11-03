@@ -757,9 +757,9 @@ class v8Detection3DLoss(v8DetectionLoss):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
         # Weight factors for 3D losses (tuned to balance with 2D losses)
-        # All 3D losses are normalized to similar ranges for stable training
-        self.loc_weight = 0.1    # Weight for x, y location losses (log-space, same as depth)
-        self.depth_weight = 0.1  # Weight for z (depth) loss (log-space, range: log(0-100))
+        # Weights adjusted to bring all losses to similar magnitude (4-7 range)
+        self.loc_weight = 1.0    # Weight for x, y location losses (simple normalization ÷20)
+        self.depth_weight = 5.0  # Weight for z (depth) loss (log-space needs higher weight)
         self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0, 1] range)
         self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
 
@@ -900,41 +900,35 @@ class v8Detection3DLoss(v8DetectionLoss):
                 target_dims = target_dims.to(pred_dims.dtype)
                 target_rot = target_rot.to(pred_rot.dtype)
 
-                # Location X loss (log-space, same as depth)
+                # Location X loss (simple normalization for higher loss magnitude)
                 if fg_mask.sum() > 0:
                     # Filter out invalid location values
                     valid_loc_x_mask = (target_loc_x[fg_mask].abs() < 100)
                     if valid_loc_x_mask.sum() > 0:
-                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask]
-                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask]
-
-                        # Shift to positive range [0, 100] and use log-space like depth
-                        # Add 50 to shift [-50, 50] → [0, 100], then log(x + 1)
-                        pred_loc_x_log = torch.log((pred_loc_x_valid + 50.0) + 1.0)
-                        target_loc_x_log = torch.log((target_loc_x_valid + 50.0) + 1.0)
+                        # Simple normalization: divide by 20 to get range [-2.5, 2.5]
+                        # This gives higher loss values compared to log-space
+                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask] / 20.0
+                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask] / 20.0
 
                         loss[3] = (
                             self.loc_weight
-                            * torch.nn.functional.l1_loss(pred_loc_x_log, target_loc_x_log, reduction="sum")
+                            * torch.nn.functional.l1_loss(pred_loc_x_valid, target_loc_x_valid, reduction="sum")
                             / target_scores_sum
                         )
 
-                # Location Y loss (log-space, same as depth)
+                # Location Y loss (simple normalization for higher loss magnitude)
                 if fg_mask.sum() > 0:
                     # Filter out invalid location values
                     valid_loc_y_mask = (target_loc_y[fg_mask].abs() < 100)
                     if valid_loc_y_mask.sum() > 0:
-                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask]
-                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask]
-
-                        # Shift to positive range [0, 100] and use log-space like depth
-                        # Add 50 to shift [-50, 50] → [0, 100], then log(x + 1)
-                        pred_loc_y_log = torch.log((pred_loc_y_valid + 50.0) + 1.0)
-                        target_loc_y_log = torch.log((target_loc_y_valid + 50.0) + 1.0)
+                        # Simple normalization: divide by 20 to get range [-2.5, 2.5]
+                        # This gives higher loss values compared to log-space
+                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask] / 20.0
+                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask] / 20.0
 
                         loss[4] = (
                             self.loc_weight
-                            * torch.nn.functional.l1_loss(pred_loc_y_log, target_loc_y_log, reduction="sum")
+                            * torch.nn.functional.l1_loss(pred_loc_y_valid, target_loc_y_valid, reduction="sum")
                             / target_scores_sum
                         )
 
