@@ -5,8 +5,26 @@
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green.svg)](LICENSE)
 
-**Developed by AI Research Group, Department of Civil Engineering**  
+**Developed by AI Research Group, Department of Civil Engineering**
 **King Mongkut's University of Technology Thonburi (KMUTT)**
+
+> **⚠️ IMPORTANT RESEARCH DISCLAIMER ⚠️**
+>
+> This is an **UNDERDEVELOPED RESEARCH VERSION** of YOLOv12-3D currently being used within our research group. This implementation is:
+> - 🔬 **Actively in development** - features may change or break
+> - 🚧 **Not production-ready** - use with caution
+> - 🧪 **Experimental** - expected accuracy and performance may vary
+> - 📝 **Not fully documented** - some features may lack complete documentation
+>
+> **USE AT YOUR OWN RISK.** We strongly recommend:
+> - Thoroughly testing before any critical use
+> - Validating results independently
+> - Using appropriate backup/safety measures
+>
+> **We welcome ALL feedback, bug reports, suggestions, and contributions** to help improve this project!
+> Please open issues, submit PRs, or contact us with your experiences and ideas.
+>
+> Together, we can make this project better for everyone! 🚀
 
 A professional implementation extending YOLOv12 with 3D object detection capabilities for autonomous driving applications using the KITTI dataset. Features complete CLI tools for dataset setup, training, validation, and inference.
 
