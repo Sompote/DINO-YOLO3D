@@ -756,12 +756,12 @@ class v8Detection3DLoss(v8DetectionLoss):
     def __init__(self, model):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
-        # Weight factors for 3D losses (reduced to balance with 2D losses)
-        # These weights are tuned to keep all losses in similar magnitude ranges
-        self.loc_weight = 0.1    # Weight for x, y location losses (range: -50 to 50m)
+        # Weight factors for 3D losses (tuned to balance with 2D losses)
+        # All 3D losses are normalized to similar ranges for stable training
+        self.loc_weight = 1.0    # Weight for x, y location losses (normalized to [-0.5, 0.5])
         self.depth_weight = 0.1  # Weight for z (depth) loss (log-space, range: log(0-100))
-        self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0,1] range)
-        self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: -1 to 1)
+        self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0, 1] range)
+        self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
@@ -900,13 +900,14 @@ class v8Detection3DLoss(v8DetectionLoss):
                 target_dims = target_dims.to(pred_dims.dtype)
                 target_rot = target_rot.to(pred_rot.dtype)
 
-                # Location X loss (L1 loss)
+                # Location X loss (L1 loss with normalization)
                 if fg_mask.sum() > 0:
                     # Filter out invalid location values
                     valid_loc_x_mask = (target_loc_x[fg_mask].abs() < 100)
                     if valid_loc_x_mask.sum() > 0:
-                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask]
-                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask]
+                        # Normalize by dividing by 100m to bring values to [-0.5, 0.5] range
+                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask] / 100.0
+                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask] / 100.0
 
                         loss[3] = (
                             self.loc_weight
@@ -914,13 +915,14 @@ class v8Detection3DLoss(v8DetectionLoss):
                             / target_scores_sum
                         )
 
-                # Location Y loss (L1 loss)
+                # Location Y loss (L1 loss with normalization)
                 if fg_mask.sum() > 0:
                     # Filter out invalid location values
                     valid_loc_y_mask = (target_loc_y[fg_mask].abs() < 100)
                     if valid_loc_y_mask.sum() > 0:
-                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask]
-                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask]
+                        # Normalize by dividing by 100m to bring values to [-0.5, 0.5] range
+                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask] / 100.0
+                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask] / 100.0
 
                         loss[4] = (
                             self.loc_weight
