@@ -120,28 +120,37 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
         return img
 
     # Use KITTI P2 matrix if not provided
-    # These are the average parameters from KITTI dataset
     if P is None:
         img_h, img_w = img.shape[:2]
-        # KITTI P2 average values, scaled to match image size
-        # Original KITTI image size is ~1242x375, we scale focal length proportionally
-        kitti_w = 1242.0
-        scale = img_w / kitti_w
-        fx = fy = 721.5377 * scale
-        cx = img_w / 2.0
-        cy = img_h / 2.0
+        # KITTI standard P2 calibration (works for standard KITTI images)
+        # If image size differs, we scale proportionally
+        kitti_w, kitti_h = 1242.0, 375.0
+        kitti_fx, kitti_fy = 721.5377, 721.5377
+        kitti_cx, kitti_cy = 609.5593, 172.854
+
+        # Scale calibration to match current image size
+        scale_x = img_w / kitti_w
+        scale_y = img_h / kitti_h
+
+        fx = kitti_fx * scale_x
+        fy = kitti_fy * scale_y
+        cx = kitti_cx * scale_x
+        cy = kitti_cy * scale_y
+
         P = np.array([
             [fx, 0.0, cx, 0.0],
             [0.0, fy, cy, 0.0],
             [0.0, 0.0, 1.0, 0.0]
         ])
 
-    # Back-project 2D bottom center to 3D location
-    # In KITTI, location is the bottom center of the 3D box
+    # Back-project 2D box to estimate 3D location
+    # In KITTI, 3D location is the BOTTOM CENTER of the 3D box
+    # When projected to 2D, this point appears near the bottom of the 2D bbox
     x1, y1, x2, y2 = box_2d
+
+    # Use 2D box bottom-center (this aligns with KITTI 3D location convention)
     cx_2d = (x1 + x2) / 2
-    # Use bottom of 2D box for y (ground plane alignment)
-    cy_2d = y2
+    cy_2d = y2  # bottom of 2D box
 
     fx, fy = P[0, 0], P[1, 1]
     cx_cam, cy_cam = P[0, 2], P[1, 2]
@@ -155,10 +164,7 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
 
     # Compute 3D box corners and project to 2D
     try:
-        # Scale dimensions for better visualization (2.0x larger)
-        # This helps the 3D box better match the visual size of the 2D box
-        dims_scaled = dims * 2.0
-        corners_3d = compute_3d_box_corners(location, dims_scaled, rotation)
+        corners_3d = compute_3d_box_corners(location, dims, rotation)
         corners_2d = project_3d_to_2d(corners_3d, P)
 
         # Check if corners are within reasonable bounds
