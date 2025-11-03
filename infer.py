@@ -155,7 +155,10 @@ def draw_3d_box(img, box_2d, depth, dims, rotation, color, thickness=2, P=None):
 
     # Compute 3D box corners and project to 2D
     try:
-        corners_3d = compute_3d_box_corners(location, dims, rotation)
+        # Scale dimensions for better visualization (2.0x larger)
+        # This helps the 3D box better match the visual size of the 2D box
+        dims_scaled = dims * 2.0
+        corners_3d = compute_3d_box_corners(location, dims_scaled, rotation)
         corners_2d = project_3d_to_2d(corners_3d, P)
 
         # Check if corners are within reasonable bounds
