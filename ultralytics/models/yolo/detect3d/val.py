@@ -30,8 +30,11 @@ class Detection3DValidator(DetectionValidator):
         super().__init__(dataloader, save_dir, pbar, args, _callbacks)
         self.args.task = "detect3d"
         self.difficulties = ("easy", "moderate", "hard")
+        # KITTI official IoU thresholds: 0.7 for Car/Truck, 0.5 for Pedestrian/Cyclist
         self.kitti_iou_thresholds = {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}
-        self.n3d = 5
+        self.n3d = 7  # Updated: x, y, z, h, w, l, rotation_y (was 5: z, h, w, l, rotation_y)
+        # KITTI uses 40 recall positions (updated 2019) instead of 11 from Pascal VOC
+        self.kitti_recall_positions = 40
         self._reset_kitti_metrics()
 
     def _reset_kitti_metrics(self):
@@ -306,14 +309,50 @@ class Detection3DValidator(DetectionValidator):
 
         return iou
 
+    def _compute_kitti_ap(self, recall, precision):
+        """
+        Compute AP using KITTI methodology (40 recall positions).
+
+        KITTI evaluation updated in 2019 to use 40 evenly-spaced recall positions
+        instead of 11 from Pascal VOC. AP is the mean precision at these positions.
+
+        Args:
+            recall: (N,) recall values sorted in ascending order
+            precision: (N,) precision values
+
+        Returns:
+            ap: Average Precision using KITTI's 40-position sampling
+        """
+        # Sample precision at 40 evenly-spaced recall positions [0, 1]
+        recall_positions = np.linspace(0, 1, self.kitti_recall_positions)
+
+        # Interpolate precision at each recall position
+        # For each position, find max precision at recall >= position (monotonic decreasing)
+        precisions = np.zeros(self.kitti_recall_positions)
+        for i, r_pos in enumerate(recall_positions):
+            # Find all recalls >= this position
+            mask = recall >= r_pos
+            if np.any(mask):
+                # Take maximum precision at or above this recall
+                precisions[i] = np.max(precision[mask])
+            else:
+                precisions[i] = 0.0
+
+        # AP is mean of precision at these 40 positions
+        ap = np.mean(precisions)
+        return ap
+
     def _convert_pred_params(self, params):
-        """Convert raw network outputs into physical depth/dimension/rotation values."""
+        """Convert raw network outputs into physical location/dimension/rotation values."""
         if params is None or params.shape[1] < self.n3d:
-            return None, None, None
-        depth = torch.sigmoid(params[:, 0]) * 100.0  # 0-100m
-        dims = torch.sigmoid(params[:, 1:4]) * 10.0  # 0-10m
-        rot = (torch.sigmoid(params[:, 4]) - 0.5) * 2 * math.pi  # -pi to pi
-        return depth, dims, rot
+            return None, None, None, None, None
+        # Decode 7 parameters: x, y, z, h, w, l, rotation_y
+        loc_x = (torch.sigmoid(params[:, 0]) - 0.5) * 100.0  # [-50, 50]m
+        loc_y = (torch.sigmoid(params[:, 1]) - 0.5) * 100.0  # [-50, 50]m
+        depth = torch.sigmoid(params[:, 2]) * 100.0  # [0, 100]m
+        dims = torch.sigmoid(params[:, 3:6]) * 10.0  # [0, 10]m (h, w, l)
+        rot = (torch.sigmoid(params[:, 6]) - 0.5) * 2 * math.pi  # [-π, π]
+        return loc_x, loc_y, depth, dims, rot
 
     def update_metrics(self, preds, batch):
         """Update 2D metrics and accumulate KITTI-style 3D statistics."""
@@ -367,7 +406,7 @@ class Detection3DValidator(DetectionValidator):
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
             extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
-            pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
+            pred_loc_x, pred_loc_y, pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
             pred_corners = None
@@ -375,15 +414,12 @@ class Detection3DValidator(DetectionValidator):
             iou_3d = None
             iou_bev = None
 
-            if pred_depth is not None and pred_dims is not None and pred_rot is not None:
-                # Build predicted 3D locations from 2D boxes and depth
-                # Simplified: use image center projection (proper method needs calibration)
+            if pred_loc_x is not None and pred_loc_y is not None and pred_depth is not None and pred_dims is not None and pred_rot is not None:
+                # Build predicted 3D locations from network predictions
                 pred_loc = torch.zeros((pred.shape[0], 3), device=pred.device, dtype=pred.dtype)
-                pred_loc[:, 2] = pred_depth  # Z (depth)
-                # X and Y would need proper back-projection with calibration matrix
-                # For now, use simplified approximation
-                pred_loc[:, 0] = (pred_boxes[:, 0] + pred_boxes[:, 2]) / 2 - 0.5  # Normalized X
-                pred_loc[:, 1] = (pred_boxes[:, 1] + pred_boxes[:, 3]) / 2 - 0.5  # Normalized Y
+                pred_loc[:, 0] = pred_loc_x  # X (lateral position in camera coords)
+                pred_loc[:, 1] = pred_loc_y  # Y (vertical position in camera coords)
+                pred_loc[:, 2] = pred_depth  # Z (depth from camera)
 
                 pred_corners = self._boxes3d_to_corners(pred_loc, pred_dims, pred_rot)
 
@@ -501,7 +537,8 @@ class Detection3DValidator(DetectionValidator):
                 fp_cum = np.cumsum(fp)
                 recall = tp_cum / (total_gt + 1e-16)
                 precision = tp_cum / (tp_cum + fp_cum + 1e-16)
-                ap, _, _ = compute_ap(recall, precision)
+                # Use KITTI-specific AP computation (40 recall positions)
+                ap = self._compute_kitti_ap(recall, precision)
 
                 stats[f"kitti/{diff}/AP/{class_name}"] = float(ap)
                 stats[f"kitti/{diff}/precision/{class_name}"] = float(precision[-1])
