@@ -757,10 +757,11 @@ class v8Detection3DLoss(v8DetectionLoss):
         """Initialize v8Detection3DLoss with model."""
         super().__init__(model)
         # Weight factors for 3D losses (reduced to balance with 2D losses)
-        self.loc_weight = 0.5    # Weight for x, y location losses
-        self.depth_weight = 0.5  # Weight for z (depth) loss
+        # These weights are tuned to keep all losses in similar magnitude ranges
+        self.loc_weight = 0.1    # Weight for x, y location losses (range: -50 to 50m)
+        self.depth_weight = 0.1  # Weight for z (depth) loss (log-space, range: log(0-100))
         self.dim_weight = 0.5    # Weight for dimension loss (normalized to [0,1] range)
-        self.rot_weight = 1.0    # Weight for rotation loss
+        self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: -1 to 1)
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
