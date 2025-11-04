@@ -231,6 +231,10 @@ python yolo3d.py train \
 
 ### Model Components
 
+![YOLOv12-3D Architecture](yolov12-3d-architecture.svg)
+
+**Key Components:**
+
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                     YOLOv12-3D Pipeline                     │
