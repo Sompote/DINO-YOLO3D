@@ -734,8 +734,8 @@ class KITTIDataset(YOLODataset):
                 alpha = float(parts[3])
 
                 # Normalize 2D bbox to [0, 1]
-                height_px = y2 - y1
                 x1, y1, x2, y2 = bbox_2d
+                height_px = y2 - y1
                 w, h = shape
                 x_center = ((x1 + x2) / 2) / w
                 y_center = ((y1 + y2) / 2) / h
