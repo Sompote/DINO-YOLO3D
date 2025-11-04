@@ -413,13 +413,21 @@ class Detection3DValidator(DetectionValidator):
             pred_boxes = predn[:, :4]
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
-            # Extract 3D parameters - pred is a tuple (2D_output, params_3d) during validation
+            # Extract 3D parameters - pred is a tuple (2D_output, (features, params_3d_raw)) during validation
             if isinstance(pred, (list, tuple)):
-                # During inference, pred is (2D_output, params_3d_decoded)
+                # During validation, pred[1] is a tuple (x[1], params_3d_raw)
                 if self.args.verbose:
                     LOGGER.info(f"DEBUG: pred is tuple with {len(pred)} elements")
-                    LOGGER.info(f"DEBUG: pred[0] shape: {pred[0].shape}, pred[1] shape: {pred[1].shape if len(pred) > 1 else 'N/A'}")
-                extra_params = pred[1].transpose(0, 1).contiguous() if len(pred) > 1 else None
+                    LOGGER.info(f"DEBUG: pred[0] shape: {pred[0].shape}")
+                    LOGGER.info(f"DEBUG: pred[1] type: {type(pred[1])}")
+                    if isinstance(pred[1], tuple):
+                        LOGGER.info(f"DEBUG: pred[1][1] shape: {pred[1][1].shape}")
+                # Extract params_3d_raw from the tuple
+                if len(pred) > 1 and isinstance(pred[1], tuple):
+                    params_3d_raw = pred[1][1]
+                    extra_params = params_3d_raw.transpose(0, 1).contiguous()
+                else:
+                    extra_params = None
             else:
                 # During training, pred is a single tensor
                 extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
