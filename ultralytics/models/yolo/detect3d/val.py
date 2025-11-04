@@ -133,14 +133,28 @@ class Detection3DValidator(DetectionValidator):
         if isinstance(preds, (list, tuple)):
             preds_2d = preds[0]
             extra = preds[1] if len(preds) > 1 else None
+
+            if self.args.verbose:
+                LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
+                LOGGER.info(f"DEBUG postprocess: preds[0] shape: {preds_2d.shape}")
+                LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
+
             if isinstance(extra, (list, tuple)):
                 # Expect tuple like (features, params_3d)
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG postprocess: extra is tuple with {len(extra)} elements")
+                    if extra:
+                        LOGGER.info(f"DEBUG postprocess: extra[-1] type: {type(extra[-1])}, shape: {extra[-1].shape if isinstance(extra[-1], torch.Tensor) else 'N/A'}")
                 if extra and isinstance(extra[-1], torch.Tensor):
                     preds_3d = extra[-1]
             elif isinstance(extra, torch.Tensor):
                 preds_3d = extra
         else:
             preds_2d = preds
+
+        if self.args.verbose:
+            LOGGER.info(f"DEBUG postprocess: Final preds_2d shape: {preds_2d.shape if preds_2d is not None else 'None'}")
+            LOGGER.info(f"DEBUG postprocess: Final preds_3d shape: {preds_3d.shape if preds_3d is not None else 'None'}")
 
         # Append 3D params to 2D predictions so NMS preserves them
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
@@ -159,6 +173,8 @@ class Detection3DValidator(DetectionValidator):
                 else:
                     # No class predictions, just use 2D boxes
                     preds_2d_for_nms = torch.cat([preds_2d[:, :6], raw_3d], dim=2)
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG postprocess: Added {self.n3d} 3D params, nc={nc}, new shape: {preds_2d_for_nms.shape}")
             else:
                 # No 3D params in preds_2d yet, just use it as is
                 preds_2d_for_nms = preds_2d
@@ -176,6 +192,10 @@ class Detection3DValidator(DetectionValidator):
             agnostic=self.args.single_cls or self.args.agnostic_nms,
             max_det=self.args.max_det,
         )
+        if self.args.verbose and outputs:
+            LOGGER.info(f"DEBUG postprocess: NMS output shape for batch[0]: {outputs[0].shape if len(outputs) > 0 else 'empty'}")
+            if len(outputs) > 0 and outputs[0].shape[1] > 6:
+                LOGGER.info(f"DEBUG postprocess: NMS output has {outputs[0].shape[1]} channels (expected > 6)")
         return outputs
 
     def init_metrics(self, model):
@@ -440,17 +460,28 @@ class Detection3DValidator(DetectionValidator):
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
 
-            # Extract 3D parameters from post-processed predictions
-            # After postprocess, pred contains [x, y, w, h, conf, cls] + 3D params
-            extra_params = None
+            # Extract 3D parameters - use DECODED params directly
+            pred_loc_x = pred_loc_y = pred_depth = pred_dims = pred_rot = None
             if pred.shape[1] > 6:
-                # 3D params are appended after the standard 6 values
-                extra_params = pred[:, 6:6+self.n3d]
-            if self.args.verbose:
-                LOGGER.info(f"DEBUG: extra_params type: {type(extra_params)}, shape: {extra_params.shape if extra_params is not None else 'None'}")
-                if extra_params is not None and extra_params.shape[0] > 0:
-                    LOGGER.info(f"DEBUG: extra_params[0] sample: {extra_params[0].detach().cpu().numpy()[:3]}")
-            pred_loc_x, pred_loc_y, pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
+                # Extract DECODED 3D params from pred
+                decoded_3d = pred[:, 6:6+self.n3d]
+
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG: Found decoded 3D params, shape: {decoded_3d.shape}")
+
+                # These are already decoded from Detect3D.forward during inference
+                # So we can use them directly without further processing
+                pred_loc_x = decoded_3d[:, 0:1]   # x location
+                pred_loc_y = decoded_3d[:, 1:2]   # y location
+                pred_depth = decoded_3d[:, 2:3]   # z depth
+                pred_dims = decoded_3d[:, 3:6]    # h, w, l dimensions
+                pred_rot = decoded_3d[:, 6:7]     # rotation_y
+
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG: Decoded 3D values:")
+                    LOGGER.info(f"  loc_x: {pred_loc_x[0].item():.3f}, loc_y: {pred_loc_y[0].item():.3f}, depth: {pred_depth[0].item():.3f}")
+                    LOGGER.info(f"  dims: {pred_dims[0].detach().cpu().numpy()}")
+                    LOGGER.info(f"  rot: {pred_rot[0].item():.3f} rad ({math.degrees(pred_rot[0].item()):.1f} deg)")
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
             pred_corners = None
