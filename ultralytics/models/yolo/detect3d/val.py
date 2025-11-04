@@ -158,21 +158,21 @@ class Detection3DValidator(DetectionValidator):
 
         # Append 3D params to 2D predictions so NMS preserves them
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
-            # Shape: (batch, n3d, num_anchors) -> (batch, num_anchors, n3d)
-            params_3d_reshaped = preds_3d.permute(0, 2, 1).contiguous()
-            # Concatenate 3D params to 2D predictions (which already have decoded 3D params)
+            # Shape: (batch, n3d, num_anchors) -> (batch, num_anchors, n3d) -> (batch, n3d, num_anchors)
+            # NMS expects (batch, channels, num_anchors)
+            params_3d_reshaped = preds_3d.permute(0, 2, 1).contiguous()  # (batch, num_anchors, n3d)
+            params_3d_for_nms = params_3d_reshaped.permute(0, 2, 1).contiguous()  # (batch, n3d, num_anchors)
+
+            # Concatenate 3D params to 2D predictions along channel dimension
             if preds_2d.shape[1] > 6:
-                # Extract the original 3D params from preds_2d and replace with raw params
-                # We want raw params for decoding, not the decoded ones
-                raw_3d = params_3d_reshaped
-                # Get 2D part + class part (first 6 + nc channels)
-                # Find nc from preds_2d shape
+                # Extract 2D + class channels (first 6 + nc)
                 nc = preds_2d.shape[1] - 6 - self.n3d
                 if nc > 0:
-                    preds_2d_for_nms = torch.cat([preds_2d[:, :6+nc], raw_3d], dim=2)
+                    # Replace existing 3D params with raw params
+                    preds_2d_for_nms = torch.cat([preds_2d[:, :6+nc], params_3d_for_nms], dim=1)
                 else:
-                    # No class predictions, just use 2D boxes
-                    preds_2d_for_nms = torch.cat([preds_2d[:, :6], raw_3d], dim=2)
+                    # Just use 2D boxes + raw 3D params
+                    preds_2d_for_nms = torch.cat([preds_2d[:, :6], params_3d_for_nms], dim=1)
                 if self.args.verbose:
                     LOGGER.info(f"DEBUG postprocess: Added {self.n3d} 3D params, nc={nc}, new shape: {preds_2d_for_nms.shape}")
             else:
