@@ -547,6 +547,10 @@ class Detection3DValidator(DetectionValidator):
             kitti_map = self.kitti_summary["moderate"]["mAP"]
             stats["metrics/mAP50-95(B)"] = kitti_map  # Override standard mAP with KITTI mAP
             stats["metrics/mAP50(B)"] = kitti_map  # Also set mAP50 to same value
+            # Also update self.metrics.results_dict so it shows in the table
+            if hasattr(self, 'metrics') and hasattr(self.metrics, 'results_dict'):
+                self.metrics.results_dict["metrics/mAP50-95(B)"] = kitti_map
+                self.metrics.results_dict["metrics/mAP50(B)"] = kitti_map
 
         for diff_key in ["all", *self.difficulties]:
             depth_vals = self.depth_errors.get(diff_key, [])
