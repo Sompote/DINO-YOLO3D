@@ -413,7 +413,13 @@ class Detection3DValidator(DetectionValidator):
             pred_boxes = predn[:, :4]
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
-            extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
+            # Extract 3D parameters - pred is a tuple (2D_output, params_3d) during validation
+            if isinstance(pred, (list, tuple)):
+                # During inference, pred is (2D_output, params_3d_decoded)
+                extra_params = pred[1].transpose(0, 1).contiguous() if len(pred) > 1 else None
+            else:
+                # During training, pred is a single tensor
+                extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
             pred_loc_x, pred_loc_y, pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
