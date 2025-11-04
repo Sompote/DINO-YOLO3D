@@ -142,14 +142,40 @@ class Detection3DValidator(DetectionValidator):
         else:
             preds_2d = preds
 
+        # Append 3D params to 2D predictions so NMS preserves them
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
-            # Append raw 3D params as additional channels so NMS keeps them
-            params = preds_3d.permute(0, 2, 1).contiguous()
-            if params.shape[0] == preds_2d.shape[0] and params.shape[1] == preds_2d.shape[1]:
-                preds_2d = torch.cat([preds_2d, params], dim=2)
+            # Shape: (batch, n3d, num_anchors) -> (batch, num_anchors, n3d)
+            params_3d_reshaped = preds_3d.permute(0, 2, 1).contiguous()
+            # Concatenate 3D params to 2D predictions (which already have decoded 3D params)
+            if preds_2d.shape[1] > 6:
+                # Extract the original 3D params from preds_2d and replace with raw params
+                # We want raw params for decoding, not the decoded ones
+                raw_3d = params_3d_reshaped
+                # Get 2D part + class part (first 6 + nc channels)
+                # Find nc from preds_2d shape
+                nc = preds_2d.shape[1] - 6 - self.n3d
+                if nc > 0:
+                    preds_2d_for_nms = torch.cat([preds_2d[:, :6+nc], raw_3d], dim=2)
+                else:
+                    # No class predictions, just use 2D boxes
+                    preds_2d_for_nms = torch.cat([preds_2d[:, :6], raw_3d], dim=2)
+            else:
+                # No 3D params in preds_2d yet, just use it as is
+                preds_2d_for_nms = preds_2d
+        else:
+            preds_2d_for_nms = preds_2d
 
-        # Apply NMS on 2D predictions
-        outputs = super().postprocess(preds_2d)
+        # Apply NMS - NMS will preserve all channels after the first 6
+        from ultralytics.utils.ops import non_max_suppression
+        outputs = non_max_suppression(
+            preds_2d_for_nms,
+            self.args.conf,
+            self.args.iou,
+            labels=self.lb,
+            multi_label=True,
+            agnostic=self.args.single_cls or self.args.agnostic_nms,
+            max_det=self.args.max_det,
+        )
         return outputs
 
     def init_metrics(self, model):
@@ -413,26 +439,17 @@ class Detection3DValidator(DetectionValidator):
             pred_boxes = predn[:, :4]
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
-            # Extract 3D parameters - pred is a tuple (2D_output, (features, params_3d_raw)) during validation
-            if isinstance(pred, (list, tuple)):
-                # During validation, pred[1] is a tuple (x[1], params_3d_raw)
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG: pred is tuple with {len(pred)} elements")
-                    LOGGER.info(f"DEBUG: pred[0] shape: {pred[0].shape}")
-                    LOGGER.info(f"DEBUG: pred[1] type: {type(pred[1])}")
-                    if isinstance(pred[1], tuple):
-                        LOGGER.info(f"DEBUG: pred[1][1] shape: {pred[1][1].shape}")
-                # Extract params_3d_raw from the tuple
-                if len(pred) > 1 and isinstance(pred[1], tuple):
-                    params_3d_raw = pred[1][1]
-                    extra_params = params_3d_raw.transpose(0, 1).contiguous()
-                else:
-                    extra_params = None
-            else:
-                # During training, pred is a single tensor
-                extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
+
+            # Extract 3D parameters from post-processed predictions
+            # After postprocess, pred contains [x, y, w, h, conf, cls] + 3D params
+            extra_params = None
+            if pred.shape[1] > 6:
+                # 3D params are appended after the standard 6 values
+                extra_params = pred[:, 6:6+self.n3d]
             if self.args.verbose:
                 LOGGER.info(f"DEBUG: extra_params type: {type(extra_params)}, shape: {extra_params.shape if extra_params is not None else 'None'}")
+                if extra_params is not None and extra_params.shape[0] > 0:
+                    LOGGER.info(f"DEBUG: extra_params[0] sample: {extra_params[0].detach().cpu().numpy()[:3]}")
             pred_loc_x, pred_loc_y, pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
