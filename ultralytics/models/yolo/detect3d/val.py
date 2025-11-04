@@ -416,10 +416,15 @@ class Detection3DValidator(DetectionValidator):
             # Extract 3D parameters - pred is a tuple (2D_output, params_3d) during validation
             if isinstance(pred, (list, tuple)):
                 # During inference, pred is (2D_output, params_3d_decoded)
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG: pred is tuple with {len(pred)} elements")
+                    LOGGER.info(f"DEBUG: pred[0] shape: {pred[0].shape}, pred[1] shape: {pred[1].shape if len(pred) > 1 else 'N/A'}")
                 extra_params = pred[1].transpose(0, 1).contiguous() if len(pred) > 1 else None
             else:
                 # During training, pred is a single tensor
                 extra_params = pred[:, 6:] if pred.shape[1] > 6 else None
+            if self.args.verbose:
+                LOGGER.info(f"DEBUG: extra_params type: {type(extra_params)}, shape: {extra_params.shape if extra_params is not None else 'None'}")
             pred_loc_x, pred_loc_y, pred_depth, pred_dims, pred_rot = self._convert_pred_params(extra_params)
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
