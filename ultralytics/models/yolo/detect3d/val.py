@@ -118,7 +118,7 @@ class Detection3DValidator(DetectionValidator):
                 for i in range(nb)
             ]
 
-        for key in ["dimensions_3d", "location_3d", "rotation_y", "alpha"]:
+        for key in ["dimensions_3d", "location_3d", "rotation_y", "alpha", "truncation", "occlusion", "bbox_height"]:
             if key in batch and batch[key] is not None:
                 batch[key] = _ensure_tensor(batch[key], cat=True)
                 if isinstance(batch[key], torch.Tensor):
