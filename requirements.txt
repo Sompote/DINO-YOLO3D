@@ -16,4 +16,5 @@ py-cpuinfo==9.0.0
 huggingface-hub==0.23.2
 safetensors==0.4.3
 numpy==1.26.4
+pandas
 supervision==0.22.0
