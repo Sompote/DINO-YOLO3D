@@ -495,17 +495,7 @@ class Detection3DValidator(DetectionValidator):
         """Returns metrics statistics and results dictionary."""
         stats = super().get_stats()
 
-        for diff_key in ["all", *self.difficulties]:
-            depth_vals = self.depth_errors.get(diff_key, [])
-            dim_vals = self.dim_errors.get(diff_key, [])
-            rot_vals = self.rot_errors.get(diff_key, [])
-            if depth_vals:
-                stats[f"kitti/{diff_key}/depth_mae"] = float(np.mean(depth_vals))
-            if dim_vals:
-                stats[f"kitti/{diff_key}/dim_mae"] = float(np.mean(dim_vals))
-            if rot_vals:
-                stats[f"kitti/{diff_key}/rot_mae"] = float(np.mean(rot_vals))
-
+        # Compute KITTI mAP first
         self.kitti_summary = {diff: {} for diff in self.difficulties}
 
         for diff in self.difficulties:
@@ -550,6 +540,24 @@ class Detection3DValidator(DetectionValidator):
                 mean_ap = float(np.mean(ap_values))
                 stats[f"kitti/{diff}/mAP"] = mean_ap
                 self.kitti_summary[diff]["mAP"] = mean_ap
+
+        # Replace standard mAP with KITTI mAP for display
+        # Use 'moderate' difficulty as the primary metric (standard in KITTI)
+        if "moderate" in self.kitti_summary and "mAP" in self.kitti_summary["moderate"]:
+            kitti_map = self.kitti_summary["moderate"]["mAP"]
+            stats["metrics/mAP50-95(B)"] = kitti_map  # Override standard mAP with KITTI mAP
+            stats["metrics/mAP50(B)"] = kitti_map  # Also set mAP50 to same value
+
+        for diff_key in ["all", *self.difficulties]:
+            depth_vals = self.depth_errors.get(diff_key, [])
+            dim_vals = self.dim_errors.get(diff_key, [])
+            rot_vals = self.rot_errors.get(diff_key, [])
+            if depth_vals:
+                stats[f"kitti/{diff_key}/depth_mae"] = float(np.mean(depth_vals))
+            if dim_vals:
+                stats[f"kitti/{diff_key}/dim_mae"] = float(np.mean(dim_vals))
+            if rot_vals:
+                stats[f"kitti/{diff_key}/rot_mae"] = float(np.mean(rot_vals))
 
         if self.depth_errors.get("all"):
             stats["metrics/depth_error"] = float(np.mean(self.depth_errors["all"]))
