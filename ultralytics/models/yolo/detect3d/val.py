@@ -352,6 +352,14 @@ class Detection3DValidator(DetectionValidator):
         depth = torch.sigmoid(params[:, 2]) * 100.0  # [0, 100]m
         dims = torch.sigmoid(params[:, 3:6]) * 10.0  # [0, 10]m (h, w, l)
         rot = (torch.sigmoid(params[:, 6]) - 0.5) * 2 * math.pi  # [-π, π]
+
+        # DEBUG: Print first prediction to check values
+        if self.args.verbose and params.shape[0] > 0:
+            LOGGER.info(f"DEBUG: First prediction values:")
+            LOGGER.info(f"  loc_x: {loc_x[0].item():.3f}, loc_y: {loc_y[0].item():.3f}, depth: {depth[0].item():.3f}")
+            LOGGER.info(f"  dims: {dims[0].detach().cpu().numpy()}")
+            LOGGER.info(f"  rot: {rot[0].item():.3f} rad ({math.degrees(rot[0].item()):.1f} deg)")
+
         return loc_x, loc_y, depth, dims, rot
 
     def update_metrics(self, preds, batch):
@@ -440,6 +448,22 @@ class Detection3DValidator(DetectionValidator):
                 ious = box_iou(pred_boxes, gt_bbox) if gt_bbox.numel() else torch.zeros(
                     (pred_boxes.shape[0], 0), device=pred_boxes.device
                 )
+
+            # DEBUG: Print IoU statistics
+            if self.args.verbose and ious.numel() > 0:
+                max_iou = torch.max(ious).item()
+                mean_iou = torch.mean(ious).item()
+                LOGGER.info(f"DEBUG: IoU stats - max: {max_iou:.4f}, mean: {mean_iou:.4f}, shape: {ious.shape}")
+                # Find a matching prediction
+                best_pred_iou = -1
+                best_gt_iou = -1
+                for p_idx in range(min(5, ious.shape[0])):
+                    for g_idx in range(min(5, ious.shape[1])):
+                        if ious[p_idx, g_idx] > best_pred_iou:
+                            best_pred_iou = ious[p_idx, g_idx].item()
+                            best_gt_iou = g_idx
+                LOGGER.info(f"DEBUG: Best IoU: {best_pred_iou:.4f} (pred {0} vs gt {best_gt_iou})")
+                LOGGER.info(f"DEBUG: Using 3D IoU: {iou_3d is not None}")
 
             order = torch.argsort(confidences, descending=True)
 
