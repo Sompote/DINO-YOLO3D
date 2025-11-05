@@ -219,18 +219,13 @@ class Detection3DValidator(DetectionValidator):
             if self.args.verbose:
                 LOGGER.warning(f"DEBUG postprocess: No 3D params found!")
 
-        # Apply NMS - BUT we need to preserve 3D params!
-        # Standard NMS only preserves first 6 channels, so we need to save 3D params separately
+        # Apply NMS while preserving 3D params
         from ultralytics.utils.ops import non_max_suppression
 
-        # Extract 3D parameters BEFORE NMS (if they exist)
-        saved_3d_params = None
-        if preds_2d_for_nms.shape[1] > 6:
-            # Save the 3D params from the last 7 channels
-            # Shape: (batch, 7, anchors)
-            saved_3d_params = preds_2d_for_nms[:, 6:13, :].clone()
-
-        # Apply standard 2D NMS
+        # CRITICAL FIX: Pass nc parameter so NMS knows there are only self.nc classes,
+        # not self.nc + 7. Without this, NMS miscalculates and treats 3D params as class channels!
+        # With nc specified correctly, NMS will automatically preserve the 3D params as extra channels
+        # (treating them as "masks" internally), so output will be (n_detections, 6 + 7).
         outputs = non_max_suppression(
             preds_2d_for_nms,
             self.args.conf,
@@ -239,26 +234,8 @@ class Detection3DValidator(DetectionValidator):
             multi_label=True,
             agnostic=self.args.single_cls or self.args.agnostic_nms,
             max_det=self.args.max_det,
+            nc=self.nc,  # FIX: Specify number of classes to preserve 3D params
         )
-
-        # Now merge 3D params back into the outputs
-        # outputs is a list of tensors (one per image), each shape (n_detections, 6)
-        # We need to add 3D params to each detection
-        if saved_3d_params is not None and outputs:
-            # Get the mapping from full predictions to NMS outputs
-            # For now, we'll use a simple approach: assume NMS keeps the first N detections
-            # and we take the corresponding 3D params from the same indices
-
-            # Process each image in the batch
-            for i in range(len(outputs)):
-                n_keep = outputs[i].shape[0]
-                if n_keep > 0 and saved_3d_params.shape[2] > 0:
-                    # Take the first n_keep 3D params
-                    # saved_3d_params[i] has shape (7, anchors)
-                    # We want (n_keep, 7)
-                    params_3d_for_image = saved_3d_params[i, :, :n_keep].transpose(0, 1)
-                    # Concatenate: (n_keep, 6) + (n_keep, 7) = (n_keep, 13)
-                    outputs[i] = torch.cat([outputs[i], params_3d_for_image], dim=1)
 
         if self.args.verbose and outputs:
             LOGGER.info(f"DEBUG postprocess: NMS output shape for batch[0]: {outputs[0].shape if len(outputs) > 0 else 'empty'}")
