@@ -134,17 +134,26 @@ class Detection3DValidator(DetectionValidator):
             preds_2d = preds[0]
             extra = preds[1] if len(preds) > 1 else None
 
-            # During training, preds[0] is a list of tensors, not a single tensor!
+            # During training mode (validation within training):
+            # preds[0] is a list of tensors (not concatenated yet)
             # We need to concatenate them first
             if isinstance(preds_2d, list):
-                # Concatenate all detection layers along channel dimension
-                preds_2d = torch.cat(preds_2d, dim=1)
+                # Concatenate all detection layers along anchor dimension
+                # This is what _inference() does, but we need to do it manually
+                # because we're in training mode
+                # Each layer: (batch, channels, h, w) -> (batch, channels, h*w)
+                # Then concat along dim=2 (anchor dimension)
+                shape = preds_2d[0].shape  # BCHW
+                x_cat = torch.cat([xi.view(shape[0], shape[1], -1) for xi in preds_2d], dim=2)
+                # Now x_cat has shape (batch, channels, total_anchors)
+                # This matches what _inference() returns
+                preds_2d = x_cat
 
             if self.args.verbose:
                 LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
                 LOGGER.info(f"DEBUG postprocess: preds[0] type: {type(preds_2d)}, shape: {preds_2d.shape}")
                 LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
-                LOGGER.info(f"DEBUG postprocess: Model export mode: {self.model.export if hasattr(self.model, 'export') else 'N/A'}")
+                LOGGER.info(f"DEBUG postprocess: Model training mode: {self.model.training if hasattr(self.model, 'training') else 'N/A'}")
 
             if isinstance(extra, (list, tuple)):
                 # Expect tuple like (features, params_3d)
@@ -164,7 +173,6 @@ class Detection3DValidator(DetectionValidator):
         if self.args.verbose:
             LOGGER.info(f"DEBUG postprocess: Final preds_2d shape: {preds_2d.shape if preds_2d is not None else 'None'}")
             LOGGER.info(f"DEBUG postprocess: Final preds_3d shape: {preds_3d.shape if preds_3d is not None else 'None'}")
-            LOGGER.info(f"DEBUG postprocess: preds_2d has 3D params: {preds_2d.shape[1] > 6 if preds_2d is not None and preds_2d.dim() == 3 else 'N/A'}")
 
         # Append 3D params to 2D predictions so NMS preserves them
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
