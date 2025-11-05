@@ -153,7 +153,6 @@ class Detection3DValidator(DetectionValidator):
                 LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
                 LOGGER.info(f"DEBUG postprocess: preds[0] type: {type(preds_2d)}, shape: {preds_2d.shape}")
                 LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
-                LOGGER.info(f"DEBUG postprocess: Model training mode: {self.model.training if hasattr(self.model, 'training') else 'N/A'}")
 
             if isinstance(extra, (list, tuple)):
                 # Expect tuple like (features, params_3d)
