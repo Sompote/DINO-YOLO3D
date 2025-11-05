@@ -134,9 +134,15 @@ class Detection3DValidator(DetectionValidator):
             preds_2d = preds[0]
             extra = preds[1] if len(preds) > 1 else None
 
+            # During training, preds[0] is a list of tensors, not a single tensor!
+            # We need to concatenate them first
+            if isinstance(preds_2d, list):
+                # Concatenate all detection layers along channel dimension
+                preds_2d = torch.cat(preds_2d, dim=1)
+
             if self.args.verbose:
                 LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
-                LOGGER.info(f"DEBUG postprocess: preds[0] shape: {preds_2d.shape}")
+                LOGGER.info(f"DEBUG postprocess: preds[0] type: {type(preds_2d)}, shape: {preds_2d.shape}")
                 LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
                 LOGGER.info(f"DEBUG postprocess: Model export mode: {self.model.export if hasattr(self.model, 'export') else 'N/A'}")
 
