@@ -367,6 +367,44 @@ python yolo3d.py train --data kitti-3d.yaml --batch 8 --imgsz 512 -y
 python yolo3d.py train --data kitti-3d.yaml --device 0,1,2,3 --batch 64 -y
 ```
 
+### Fast Validation During Training
+
+Use `--valpercent` to speed up validation by using only a subset of validation data:
+
+```bash
+# Train with 10% validation for faster epochs (training uses 100% data)
+python yolo3d.py train \
+    --data kitti-3d.yaml \
+    --epochs 100 \
+    --batch 16 \
+    --valpercent 10 \
+    -y
+
+# Train with 50% validation for balanced speed
+python yolo3d.py train \
+    --data kitti-3d.yaml \
+    --epochs 100 \
+    --batch 16 \
+    --valpercent 50 \
+    -y
+
+# Full validation (100%) for final evaluation
+python yolo3d.py val \
+    --model runs/detect/train/weights/best.pt \
+    --data kitti-3d.yaml
+```
+
+**Benefits:**
+- ⚡ **Faster training**: Validation runs complete in minutes instead of hours
+- 🎯 **Full training**: Training always uses 100% of training data
+- 📊 **Accurate metrics**: Validation metrics still representative with 10-20% subset
+- 🔄 **Easy adjustment**: Change `--valpercent` between 1-100 based on needs
+
+**Recommendation:**
+- `--valpercent 10`: For rapid experimentation and debugging
+- `--valpercent 25`: For development and hyperparameter tuning
+- `--valpercent 100`: For final model evaluation and benchmarking
+
 ### Hyperparameter Tuning
 
 ```bash

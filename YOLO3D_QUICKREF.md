@@ -94,13 +94,22 @@ python yolo3d.py export --model best.pt --format engine
 
 ### Training
 ```bash
---model n/s/m/l/x    # Model size
---data CONFIG.yaml   # Dataset config
---epochs 100         # Training epochs
---batch 16          # Batch size
---device 0          # GPU device
---name EXP_NAME     # Experiment name
--y                  # Skip confirmation
+--model n/s/m/l/x     # Model size
+--data CONFIG.yaml    # Dataset config
+--epochs 100          # Training epochs
+--batch 16            # Batch size
+--device 0           # GPU device
+--name EXP_NAME      # Experiment name
+--valpercent 10      # Use 10% of val data (faster epochs, training uses 100%)
+-y                   # Skip confirmation
+```
+
+### Fast Validation Tip
+```bash
+# Speed up training with partial validation
+--valpercent 10      # 10% validation = faster training
+--valpercent 50      # 50% validation = balanced
+--valpercent 100     # Full validation = accurate metrics
 ```
 
 ### Prediction
