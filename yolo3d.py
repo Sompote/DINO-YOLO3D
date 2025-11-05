@@ -215,6 +215,12 @@ def cmd_train(args):
         if args.nbs > 0:
             train_kwargs["nbs"] = args.nbs
 
+        # Add validation fraction for faster validation during training
+        if args.valpercent < 100.0:
+            val_fraction = args.valpercent / 100.0
+            train_kwargs["val_fraction"] = val_fraction
+            print_info(f"Using {args.valpercent}% of validation data for faster validation during training")
+
         results = model.train(**train_kwargs)
 
         print_section("Training Complete!")

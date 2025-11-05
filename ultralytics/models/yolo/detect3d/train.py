@@ -56,7 +56,9 @@ class Detection3DTrainer(BaseTrainer):
             task="detect3d",
             classes=self.args.classes,
             data=self.data,
-            fraction=self.args.fraction if mode == "train" else 1.0,
+            fraction=self.args.fraction if mode == "train" else (
+                getattr(self.args, "val_fraction", 1.0) if mode == "val" else 1.0
+            ),
         )
 
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
