@@ -22,17 +22,23 @@ class KITTI3DVisualizer:
         """Initialize KITTI 3D visualizer."""
         # KITTI class names
         self.class_names = {
-            0: 'Car', 1: 'Truck', 2: 'Pedestrian', 3: 'Cyclist',
-            4: 'Misc', 5: 'Van', 6: 'Tram', 7: 'Person_sitting'
+            0: "Car",
+            1: "Truck",
+            2: "Pedestrian",
+            3: "Cyclist",
+            4: "Misc",
+            5: "Van",
+            6: "Tram",
+            7: "Person_sitting",
         }
 
         # Colors for each class (BGR format)
         self.colors = {
-            0: (0, 255, 0),    # Car - Green
-            1: (255, 0, 0),    # Truck - Blue
-            2: (0, 0, 255),    # Pedestrian - Red
+            0: (0, 255, 0),  # Car - Green
+            1: (255, 0, 0),  # Truck - Blue
+            2: (0, 0, 255),  # Pedestrian - Red
             3: (255, 255, 0),  # Cyclist - Cyan
-            4: (128, 128, 128),# Misc - Gray
+            4: (128, 128, 128),  # Misc - Gray
             5: (255, 0, 255),  # Van - Magenta
             6: (0, 255, 255),  # Tram - Yellow
             7: (128, 0, 128),  # Person_sitting - Purple
@@ -86,23 +92,23 @@ class KITTI3DVisualizer:
         # Camera coordinates: X=right, Y=down, Z=forward
         # So: y=0 is at bottom, y=-h is at top (upward is negative y)
         # Create 8 corners: 4 bottom corners (dy=0) + 4 top corners (dy=-h)
-        corners_3d = np.array([
-            [w/2, 0, l/2],       # back bottom right (at location height)
-            [w/2, -h, l/2],      # back top right (extends upward by h)
-            [-w/2, -h, l/2],     # back top left
-            [-w/2, 0, l/2],      # back bottom left
-            [w/2, 0, -l/2],      # front bottom right
-            [w/2, -h, -l/2],     # front top right
-            [-w/2, -h, -l/2],    # front top left
-            [-w/2, 0, -l/2],     # front bottom left
-        ])
+        corners_3d = np.array(
+            [
+                [w / 2, 0, l / 2],  # back bottom right (at location height)
+                [w / 2, -h, l / 2],  # back top right (extends upward by h)
+                [-w / 2, -h, l / 2],  # back top left
+                [-w / 2, 0, l / 2],  # back bottom left
+                [w / 2, 0, -l / 2],  # front bottom right
+                [w / 2, -h, -l / 2],  # front top right
+                [-w / 2, -h, -l / 2],  # front top left
+                [-w / 2, 0, -l / 2],  # front bottom left
+            ]
+        )
 
         # Rotation matrix around Y axis
-        R = np.array([
-            [np.cos(rotation_y), 0, np.sin(rotation_y)],
-            [0, 1, 0],
-            [-np.sin(rotation_y), 0, np.cos(rotation_y)]
-        ])
+        R = np.array(
+            [[np.cos(rotation_y), 0, np.sin(rotation_y)], [0, 1, 0], [-np.sin(rotation_y), 0, np.cos(rotation_y)]]
+        )
 
         # Rotate and translate
         corners_3d = corners_3d @ R.T
@@ -165,10 +171,10 @@ class KITTI3DVisualizer:
             y_3d = (center_2d_y - cy) * z_3d / fy + h_3d / 2.0  # Adjust to bottom center
 
             # Get class info
-            class_name = self.class_names.get(cls, f'Class_{cls}')
+            class_name = self.class_names.get(cls, f"Class_{cls}")
             color = self.colors.get(cls, (255, 255, 255))
 
-            print(f"  {i+1}. {class_name} (conf={conf:.3f})")
+            print(f"  {i + 1}. {class_name} (conf={conf:.3f})")
             print(f"     2D bbox: [{x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}]")
             print(f"     2D center: ({center_2d_x:.1f}, {center_2d_y:.1f})")
             print(f"     3D location (bottom center): x={x_3d:.2f}m, y={y_3d:.2f}m, z={z_3d:.2f}m")
@@ -176,21 +182,15 @@ class KITTI3DVisualizer:
             print(f"     Rotation: {rot_y:.3f} rad ({math.degrees(rot_y):.1f}°)")
 
             # Draw 2D bbox
-            cv2.rectangle(img_vis,
-                         (int(x1), int(y1)),
-                         (int(x2), int(y2)),
-                         color, 2)
+            cv2.rectangle(img_vis, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
 
             # Draw label
-            label = f'{class_name} {conf:.2f}'
+            label = f"{class_name} {conf:.2f}"
             label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            cv2.rectangle(img_vis,
-                         (int(x1), int(y1) - label_size[1] - 4),
-                         (int(x1) + label_size[0], int(y1)),
-                         color, -1)
-            cv2.putText(img_vis, label,
-                       (int(x1), int(y1) - 2),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.rectangle(
+                img_vis, (int(x1), int(y1) - label_size[1] - 4), (int(x1) + label_size[0], int(y1)), color, -1
+            )
+            cv2.putText(img_vis, label, (int(x1), int(y1) - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
             # Project and draw 3D box
             try:
@@ -210,26 +210,22 @@ class KITTI3DVisualizer:
 
 def load_calib(calib_file):
     """Load KITTI calibration file."""
-    with open(calib_file, 'r') as f:
+    with open(calib_file, "r") as f:
         lines = f.readlines()
 
     for line in lines:
-        if line.startswith('P2:'):
+        if line.startswith("P2:"):
             P2 = np.array([float(x) for x in line.split()[1:]], dtype=np.float32)
             P2 = P2.reshape(3, 4)
             return P2
 
     # Default P2 matrix if not found
     print("Warning: P2 not found in calib file, using default")
-    P2 = np.array([
-        [721.5377, 0, 609.5593, 44.85728],
-        [0, 721.5377, 172.854, 0.2163791],
-        [0, 0, 1, 0.002745884]
-    ])
+    P2 = np.array([[721.5377, 0, 609.5593, 44.85728], [0, 721.5377, 172.854, 0.2163791], [0, 0, 1, 0.002745884]])
     return P2
 
 
-def run_inference(model_path, image_paths, data_yaml, output_dir='inference_results'):
+def run_inference(model_path, image_paths, data_yaml, output_dir="inference_results"):
     """Run inference on images and visualize results."""
 
     # Create output directory
@@ -238,7 +234,7 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
 
     # Load model
     print(f"Loading model from: {model_path}")
-    model = YOLO(model_path, task='detect3d')
+    model = YOLO(model_path, task="detect3d")
 
     # Create visualizer
     visualizer = KITTI3DVisualizer()
@@ -246,9 +242,9 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
     # Process each image
     for img_path in image_paths:
         img_path = Path(img_path)
-        print(f"\n{'='*60}")
+        print(f"\n{'=' * 60}")
         print(f"Processing: {img_path.name}")
-        print('='*60)
+        print("=" * 60)
 
         # Load image
         img = cv2.imread(str(img_path))
@@ -259,17 +255,15 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
         print(f"Image size: {img.shape[1]}x{img.shape[0]}")
 
         # Load calibration
-        calib_path = str(img_path).replace('image_2', 'calib').replace('.png', '.txt')
+        calib_path = str(img_path).replace("image_2", "calib").replace(".png", ".txt")
         if Path(calib_path).exists():
             P2 = load_calib(calib_path)
             print(f"Loaded calibration from: {calib_path}")
         else:
             print(f"Warning: Calib file not found: {calib_path}")
-            P2 = np.array([
-                [721.5377, 0, 609.5593, 44.85728],
-                [0, 721.5377, 172.854, 0.2163791],
-                [0, 0, 1, 0.002745884]
-            ])
+            P2 = np.array(
+                [[721.5377, 0, 609.5593, 44.85728], [0, 721.5377, 172.854, 0.2163791], [0, 0, 1, 0.002745884]]
+            )
 
         # Run inference
         print("Running inference...")
@@ -282,7 +276,7 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
             detections = []
 
             # Check if we have 3D parameters in the results
-            if hasattr(boxes, 'data') and boxes.data.shape[1] >= 13:
+            if hasattr(boxes, "data") and boxes.data.shape[1] >= 13:
                 detections = boxes.data.cpu().numpy()
             else:
                 print("Warning: No 3D parameters found in results")
@@ -297,13 +291,13 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
         # Display using matplotlib
         plt.figure(figsize=(16, 9))
         plt.imshow(cv2.cvtColor(img_vis, cv2.COLOR_BGR2RGB))
-        plt.axis('off')
-        plt.title(f'3D Object Detection: {img_path.name}')
+        plt.axis("off")
+        plt.title(f"3D Object Detection: {img_path.name}")
         plt.tight_layout()
 
         # Save matplotlib figure
         plt_path = output_dir / f"{img_path.stem}_plot.png"
-        plt.savefig(plt_path, dpi=150, bbox_inches='tight')
+        plt.savefig(plt_path, dpi=150, bbox_inches="tight")
         print(f"Saved plot to: {plt_path}")
 
         # Show plot
@@ -313,7 +307,7 @@ def run_inference(model_path, image_paths, data_yaml, output_dir='inference_resu
 
 if __name__ == "__main__":
     # Configuration
-    MODEL_PATH = "last-2.pt"
+    MODEL_PATH = "/Users/sompoteyouwai/env/yolo3d/yolov12/last-3.pt"
     DATA_YAML = "kitti-3d.yaml"
     IMAGE_DIR = "/Users/sompoteyouwai/Downloads/datakitti/datasets/kitti/training/image_2"
 
@@ -340,7 +334,7 @@ if __name__ == "__main__":
     # Run inference
     run_inference(MODEL_PATH, test_images, DATA_YAML)
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Inference completed!")
     print(f"Results saved to: inference_results/")
-    print("="*60)
+    print("=" * 60)
