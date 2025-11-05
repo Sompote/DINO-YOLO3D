@@ -36,6 +36,7 @@ class BaseDataset(Dataset):
         single_cls (bool, optional): If True, single class training is used. Defaults to False.
         classes (list): List of included classes. Default is None.
         fraction (float): Fraction of dataset to utilize. Default is 1.0 (use all data).
+        val_fraction (float, optional): Fraction of validation data to utilize. Default is None (use all val data).
 
     Attributes:
         im_files (list): List of image file paths.
@@ -61,6 +62,7 @@ class BaseDataset(Dataset):
         single_cls=False,
         classes=None,
         fraction=1.0,
+        val_fraction=None,
     ):
         """Initialize BaseDataset with given configuration and options."""
         super().__init__()
@@ -70,6 +72,7 @@ class BaseDataset(Dataset):
         self.single_cls = single_cls
         self.prefix = prefix
         self.fraction = fraction
+        self.val_fraction = val_fraction
         self.im_files = self.get_img_files(self.img_path)
         self.labels = self.get_labels()
         self.update_labels(include_class=classes)  # single_cls and include_class
@@ -125,8 +128,11 @@ class BaseDataset(Dataset):
             assert im_files, f"{self.prefix}No images found in {img_path}. {FORMATS_HELP_MSG}"
         except Exception as e:
             raise FileNotFoundError(f"{self.prefix}Error loading data from {img_path}\n{HELP_URL}") from e
-        if self.fraction < 1:
-            im_files = im_files[: round(len(im_files) * self.fraction)]  # retain a fraction of the dataset
+
+        # Use val_fraction if set (for validation mode), otherwise use fraction (for training mode)
+        data_fraction = self.val_fraction if self.val_fraction is not None else self.fraction
+        if data_fraction < 1:
+            im_files = im_files[: round(len(im_files) * data_fraction)]  # retain a fraction of the dataset
         return im_files
 
     def update_labels(self, include_class: Optional[list]):

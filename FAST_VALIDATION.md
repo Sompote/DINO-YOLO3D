@@ -100,6 +100,17 @@ Training Configuration
   ...
 ```
 
+**No Dataset Modification Required!** The `--valpercent` option works with your existing dataset configuration:
+
+```yaml
+# kitti-3d.yaml - No changes needed!
+path: /path/to/kitti
+train: training/image_2
+val: training/image_2  ← Works with same directory as train
+nc: 8
+names: [...]
+```
+
 ## Warnings
 
 ### Low Percentage Warning
@@ -141,6 +152,12 @@ python yolo3d.py train --model s --data kitti-3d.yaml --valpercent 150
    - **Dev**: Use 10-25% for faster iteration
    - **Prod**: Always use 100% for final model
 
+4. **No Dataset Preparation Needed**
+   - Works with existing kitti-3d.yaml (even if train/val point to same directory)
+   - No need to create separate val/ directory
+   - No need to copy or split data files
+   - Just use --valpercent and it works!
+
 ## Comparison with Other Speedup Methods
 
 | Method | Speedup | Impact on Metrics | When to Use |
@@ -154,20 +171,26 @@ python yolo3d.py train --model s --data kitti-3d.yaml --valpercent 150
 
 ### Implementation
 
-The `fraction` parameter is passed to ultralytics' validator:
+The `--valpercent` parameter is passed through the dataset loader without copying data:
 
 ```python
-# In yolo3d.py
-if args.valpercent < 100.0:
-    val_fraction = args.valpercent / 100.0
-    train_kwargs["fraction"] = val_fraction
+# In detect3d/train.py - build_dataset()
+if mode == "val" and hasattr(self.args, "valpercent"):
+    if self.args.valpercent < 100.0:
+        val_fraction = self.args.valpercent / 100.0
+
+# In ultralytics/data/base.py - get_img_files()
+data_fraction = self.val_fraction if self.val_fraction is not None else self.fraction
+if data_fraction < 1:
+    im_files = im_files[: round(len(im_files) * data_fraction)]
 ```
 
 ### Data Sampling
 
-- **Random**: Different subset each validation epoch
-- **Stratified**: Maintains class distribution
-- **Reproducible**: Set `--seed` for consistency
+- **No Data Copying**: Loads only subset directly from training directory
+- **Subset Selection**: Uses first N% of validation directory
+- **Reproducible**: Set `--seed` for consistent subset selection
+- **Memory Efficient**: Only loads subset into memory, not full dataset
 
 ### Metrics Computation
 
@@ -227,6 +250,15 @@ A: Slightly, but main benefit is speed.
 
 **Q: What's the default?**
 A: 100% (full validation data)
+
+**Q: Do I need to create a separate val/ directory?**
+A: No! The val_fraction parameter loads only a subset directly from your existing dataset. Works even if train and val point to the same directory in your YAML.
+
+**Q: Does it copy data files?**
+A: No! It loads only the first N% of files directly from the directory. No disk space wasted, no copying time.
+
+**Q: What if I want different subsets each epoch?**
+A: Set a random seed with --seed for reproducibility, or omit it for different subsets each time.
 
 ## See Also
 
