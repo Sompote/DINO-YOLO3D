@@ -515,11 +515,11 @@ class Detection3DValidator(DetectionValidator):
                 params_3d = pred[:, 6:6+self.n3d]
 
                 # Check if params are decoded (values > 1) or raw (values in [0,1])
-                # During inference, params are already decoded by Detect3D.forward()
-                # During training mode validation, params are raw (just appended)
-                max_val = params_3d.max().item()
+                # Strategy: Check dimension channel (ch 3-6). If max < 0.5, likely raw (sigmoid range)
+                # After decoding dims should be [0, 10], so if max(dim) < 0.5, it's still raw
+                dim_max = params_3d[:, 3:6].max().item()
 
-                if max_val > 1.5:
+                if dim_max > 0.5:
                     # Already decoded - use directly
                     pred_loc_x = params_3d[:, 0:1]
                     pred_loc_y = params_3d[:, 1:2]
@@ -527,11 +527,11 @@ class Detection3DValidator(DetectionValidator):
                     pred_dims = params_3d[:, 3:6]
                     pred_rot = params_3d[:, 6:7]
                     if self.args.verbose:
-                        LOGGER.info(f"DEBUG: Using DECODED 3D params (max={max_val:.3f})")
+                        LOGGER.info(f"DEBUG: Using DECODED 3D params (dim_max={dim_max:.3f})")
                 else:
                     # Raw params - decode them
                     if self.args.verbose:
-                        LOGGER.info(f"DEBUG: Decoding RAW 3D params (max={max_val:.3f})")
+                        LOGGER.info(f"DEBUG: Decoding RAW 3D params (dim_max={dim_max:.3f})")
 
                     # Decode using same logic as Detect3D.forward()
                     pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
