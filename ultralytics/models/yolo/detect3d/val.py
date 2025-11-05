@@ -458,6 +458,10 @@ class Detection3DValidator(DetectionValidator):
 
     def update_metrics(self, preds, batch):
         """Update 2D metrics and accumulate KITTI-style 3D statistics."""
+        # DEBUG: Check if we're getting called
+        if self.args.verbose:
+            LOGGER.info(f"DEBUG update_metrics: Called with {len(preds)} predictions")
+
         super().update_metrics(preds, batch)
 
         batch_idx = batch["batch_idx"]
@@ -472,6 +476,10 @@ class Detection3DValidator(DetectionValidator):
             pbatch = self._prepare_batch(si, batch)
             gt_cls = pbatch["cls"]
             gt_bbox = pbatch["bbox"]
+
+            if self.args.verbose and si < 3:  # Only log first few
+                LOGGER.info(f"DEBUG update_metrics: Image {si}, GT objects: {gt_cls.numel()}")
+
             if gt_cls.numel() == 0:
                 # Still record false positives for KITTI metrics
                 for diff in self.difficulties:
@@ -645,9 +653,26 @@ class Detection3DValidator(DetectionValidator):
                             self.rot_errors["all"].append(rot_err)
                             self.rot_errors[diff].append(rot_err)
 
+        # DEBUG: Summary of KITTI stats
+        if self.args.verbose:
+            total_conf = sum(len(self.kitti_stats['moderate'][cls_id]['conf']) for cls_id in range(self.nc))
+            total_tp = sum(sum(self.kitti_stats['moderate'][cls_id]['tp']) for cls_id in range(self.nc))
+            LOGGER.info(f"DEBUG update_metrics: Total detections recorded: {total_conf}, TPs: {total_tp}")
+            total_gt = sum(self.kitti_gt_counts['moderate'])
+            LOGGER.info(f"DEBUG update_metrics: Total GT objects (moderate): {total_gt}")
+
     def get_stats(self):
         """Returns metrics statistics and results dictionary."""
         stats = super().get_stats()
+
+        # DEBUG: Check if we have KITTI data
+        if self.args.verbose:
+            LOGGER.info(f"DEBUG get_stats: kitti_stats exists: {self.kitti_stats is not None}")
+            if self.kitti_stats:
+                LOGGER.info(f"DEBUG get_stats: kitti_stats['moderate'][0] conf: {len(self.kitti_stats['moderate'][0]['conf'])} items")
+            LOGGER.info(f"DEBUG get_stats: kitti_gt_counts exists: {self.kitti_gt_counts is not None}")
+            if self.kitti_gt_counts:
+                LOGGER.info(f"DEBUG get_stats: kitti_gt_counts['moderate']: {self.kitti_gt_counts['moderate']}")
 
         # Compute KITTI mAP first
         self.kitti_summary = {diff: {} for diff in self.difficulties}
