@@ -729,7 +729,9 @@ class Detection3DValidator(DetectionValidator):
     def get_desc(self):
         """Return a formatted string summarizing class metrics of YOLO model."""
         # Extend with 3D metrics
-        return ("%22s" + "%11s" * 8) % (
+        # Format: Class | Images | Instances | Box(P) | R | map50 | KmAP50 | KmAP
+        # That's 1 + 7 = 8 values total
+        return ("%22s" + "%11s" * 7) % (
             "Class",
             "Images",
             "Instances",
