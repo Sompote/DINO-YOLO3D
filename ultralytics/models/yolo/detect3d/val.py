@@ -555,9 +555,9 @@ class Detection3DValidator(DetectionValidator):
             if pred_loc_x is not None and pred_loc_y is not None and pred_depth is not None and pred_dims is not None and pred_rot is not None:
                 # Build predicted 3D locations from network predictions
                 pred_loc = torch.zeros((pred.shape[0], 3), device=pred.device, dtype=pred.dtype)
-                pred_loc[:, 0] = pred_loc_x  # X (lateral position in camera coords)
-                pred_loc[:, 1] = pred_loc_y  # Y (vertical position in camera coords)
-                pred_loc[:, 2] = pred_depth  # Z (depth from camera)
+                pred_loc[:, 0:1] = pred_loc_x  # X (lateral position in camera coords)
+                pred_loc[:, 1:2] = pred_loc_y  # Y (vertical position in camera coords)
+                pred_loc[:, 2:3] = pred_depth  # Z (depth from camera)
 
                 pred_corners = self._boxes3d_to_corners(pred_loc, pred_dims, pred_rot)
 
