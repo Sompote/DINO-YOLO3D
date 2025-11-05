@@ -216,6 +216,7 @@ def cmd_train(args):
             "dfl": args.dfl,
             "plots": args.plots,
             "val": args.val,
+            "valpercent": args.valpercent,  # Pass valpercent to trainer
         }
 
         # Add nbs if specified (controls gradient accumulation)
