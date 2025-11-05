@@ -309,12 +309,12 @@ class Detection3DValidator(DetectionValidator):
         corners = torch.stack([x_corners, y_corners, z_corners], dim=2)  # (N, 8, 3)
 
         # Apply rotation around Y axis
-        rot_y = rotation_y.unsqueeze(1)  # (N, 1)
-        cos_ry = torch.cos(rot_y)
-        sin_ry = torch.sin(rot_y)
+        # Reshape rotation angles to (N, 1) for broadcasting
+        cos_ry = torch.cos(rotation_y).reshape(-1, 1)  # (N, 1)
+        sin_ry = torch.sin(rotation_y).reshape(-1, 1)  # (N, 1)
 
         # Rotation matrix around Y axis
-        corners_rotated = torch.zeros_like(corners)
+        corners_rotated = torch.zeros_like(corners)  # (N, 8, 3)
         corners_rotated[:, :, 0] = cos_ry * corners[:, :, 0] + sin_ry * corners[:, :, 2]
         corners_rotated[:, :, 1] = corners[:, :, 1]
         corners_rotated[:, :, 2] = -sin_ry * corners[:, :, 0] + cos_ry * corners[:, :, 2]
