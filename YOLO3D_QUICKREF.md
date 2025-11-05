@@ -35,6 +35,9 @@ python yolo3d.py train --model m --data kitti-3d.yaml --epochs 200 --batch 32 -y
 
 # Resume training
 python yolo3d.py train --model runs/detect/train/weights/last.pt --data kitti-3d.yaml
+
+# Train without validation (FASTEST)
+python yolo3d.py train --model m --data kitti-3d.yaml --epochs 600 --noval -y
 ```
 
 ### Validation
@@ -101,6 +104,7 @@ python yolo3d.py export --model best.pt --format engine
 --device 0           # GPU device
 --name EXP_NAME      # Experiment name
 --valpercent 10      # Use 10% of val data (faster epochs, training uses 100%)
+--noval              # Skip validation entirely (fastest training)
 -y                   # Skip confirmation
 ```
 
@@ -110,6 +114,7 @@ python yolo3d.py export --model best.pt --format engine
 --valpercent 10      # 10% validation = faster training
 --valpercent 50      # 50% validation = balanced
 --valpercent 100     # Full validation = accurate metrics
+--noval              # No validation = MAXIMUM speed
 ```
 
 ### Prediction

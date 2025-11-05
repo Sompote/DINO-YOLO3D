@@ -17,6 +17,9 @@ python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 10
 python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 100 --valpercent 100
 # Or simply omit the argument:
 python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 100
+
+# Skip validation entirely (FASTEST training, no metrics)
+python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 100 --noval
 ```
 
 ## When to Use
@@ -37,6 +40,11 @@ python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 10
    - Training on machines with limited memory
    - When validation takes too long
    - Cloud training with hourly costs
+
+4. **No Validation Needed** (--noval)
+   - Training only (inference later)
+   - Extreme speed requirements
+   - Automated training pipelines
 
 ### ❌ When NOT to Use
 
@@ -59,17 +67,19 @@ python yolo3d.py train --model yolov12s-3d.yaml --data kitti-3d.yaml --epochs 10
 | 25% | Development iteration | ~4x faster | ⭐⭐⭐ |
 | 10% | Rapid prototyping | ~10x faster | ⭐⭐ |
 | <10% | Quick sanity check | >10x faster | ⭐ (not reliable) |
+| --noval | Maximum speed, training only | **~20-50x faster** | ✗ (no metrics) |
 
 ## Example Speedup
 
 With KITTI 3D validation set (7481 images):
 
-| Percentage | Images Used | Approx. Time | Use Case |
-|------------|-------------|--------------|----------|
+| Option | Images Used | Approx. Time | Use Case |
+|--------|-------------|--------------|----------|
 | 100% | 7481 | ~15 minutes | Final training |
 | 50% | 3740 | ~7-8 minutes | Testing |
 | 25% | 1870 | ~4 minutes | Development |
 | 10% | 748 | ~1.5 minutes | Quick check |
+| --noval | 0 | ~0 minutes | Training only |
 
 *Times are approximate and depend on hardware, batch size, and model size.*
 
@@ -259,6 +269,23 @@ A: No! It loads only the first N% of files directly from the directory. No disk 
 
 **Q: What if I want different subsets each epoch?**
 A: Set a random seed with --seed for reproducibility, or omit it for different subsets each time.
+
+**Q: Can I disable validation entirely?**
+A: Yes! Use `--noval` to skip validation during training completely. This gives maximum speed but no metrics. Use when you just want to train a model quickly and validate later with `python yolo3d.py val`.
+
+**Q: When should I use --noval?**
+A: Use `--noval` when:
+  - You're training only and will validate separately
+  - You need maximum speed and don't need live metrics
+  - You're doing automated training in a pipeline
+  - You're doing quick experiments and just need to see if the model learns
+
+**Q: How do I validate if I use --noval?**
+A: Run validation separately after training:
+  ```bash
+  python yolo3d.py train --model m --data kitti-3d.yaml --epochs 600 --noval
+  python yolo3d.py val --model runs/detect/train/weights/best.pt --data kitti-3d.yaml
+  ```
 
 ## See Also
 

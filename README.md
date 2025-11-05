@@ -392,6 +392,19 @@ python yolo3d.py train \
 python yolo3d.py val \
     --model runs/detect/train/weights/best.pt \
     --data kitti-3d.yaml
+
+# Skip validation entirely (FASTEST training, validate later)
+python yolo3d.py train \
+    --data kitti-3d.yaml \
+    --epochs 600 \
+    --batch 16 \
+    --noval \
+    -y
+
+# Validate separately after training
+python yolo3d.py val \
+    --model runs/detect/train/weights/best.pt \
+    --data kitti-3d.yaml
 ```
 
 **Benefits:**

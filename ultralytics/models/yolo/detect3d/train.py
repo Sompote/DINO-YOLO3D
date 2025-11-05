@@ -44,8 +44,8 @@ class Detection3DTrainer(BaseTrainer):
 
         # Handle valpercent for validation mode
         val_fraction = 1.0
-        if mode == "val" and hasattr(self.args, "valpercent"):
-            if self.args.valpercent < 100.0:
+        if mode == "val" and self.args.get("val", True):  # Only if validation is enabled
+            if hasattr(self.args, "valpercent") and self.args.valpercent < 100.0:
                 val_fraction = self.args.valpercent / 100.0
                 if RANK == 0:
                     LOGGER.info(f"Using {self.args.valpercent}% of validation data for validation")

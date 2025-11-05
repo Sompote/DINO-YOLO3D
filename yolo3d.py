@@ -100,14 +100,18 @@ def cmd_train(args):
         print_info("Example: ultralytics/cfg/datasets/kitti-3d.yaml")
         return 1
 
-    # Validate valpercent
-    if args.valpercent < 1 or args.valpercent > 100:
+    # Handle --noval flag (overrides --val)
+    if args.noval:
+        args.val = False
+
+    # Validate valpercent only if validation is enabled
+    if args.val and args.valpercent < 1 or args.valpercent > 100:
         print_error(f"Invalid --valpercent value: {args.valpercent}")
         print_info("Must be between 1 and 100")
         return 1
 
     # Warn if using very low validation percentage
-    if args.valpercent < 10:
+    if args.val and args.valpercent < 10:
         print_warning(f"Using only {args.valpercent}% of validation data - metrics may not be representative!")
         print_info("Recommended minimum: --valpercent 10")
 
@@ -132,7 +136,10 @@ def cmd_train(args):
     accumulate = max(round((args.nbs if args.nbs > 0 else 64) / args.batch), 1)
 
     # Validation info
-    val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
+    if args.val:
+        val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
+    else:
+        val_info = "DISABLED (--noval)"
 
     config_info = f"""
   Model:           {Colors.BOLD}{model_path}{Colors.ENDC}
@@ -481,6 +488,7 @@ For more information: python yolo3d.py <command> --help
     parser_train.add_argument("--save", action="store_true", default=True, help="Save checkpoints")
     parser_train.add_argument("--plots", action="store_true", default=True, help="Save training plots")
     parser_train.add_argument("--val", action="store_true", default=True, help="Validate during training")
+    parser_train.add_argument("--noval", action="store_true", help="Skip validation during training (faster training, no metrics)")
     parser_train.add_argument("--valpercent", type=float, default=100.0, help="Percentage of validation data to use (1-100, default: 100). Use lower values for faster validation.")
     parser_train.add_argument("--verbose", action="store_true", help="Verbose output")
     parser_train.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
