@@ -138,13 +138,16 @@ class Detection3DValidator(DetectionValidator):
                 LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
                 LOGGER.info(f"DEBUG postprocess: preds[0] shape: {preds_2d.shape}")
                 LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
+                LOGGER.info(f"DEBUG postprocess: Model export mode: {self.model.export if hasattr(self.model, 'export') else 'N/A'}")
 
             if isinstance(extra, (list, tuple)):
                 # Expect tuple like (features, params_3d)
                 if self.args.verbose:
                     LOGGER.info(f"DEBUG postprocess: extra is tuple with {len(extra)} elements")
-                    if extra:
-                        LOGGER.info(f"DEBUG postprocess: extra[-1] type: {type(extra[-1])}, shape: {extra[-1].shape if isinstance(extra[-1], torch.Tensor) else 'N/A'}")
+                    if len(extra) > 0:
+                        LOGGER.info(f"DEBUG postprocess: extra[0] shape: {extra[0].shape if isinstance(extra[0], torch.Tensor) else 'N/A'}")
+                    if len(extra) > 1:
+                        LOGGER.info(f"DEBUG postprocess: extra[1] shape: {extra[1].shape if isinstance(extra[1], torch.Tensor) else 'N/A'}")
                 if extra and isinstance(extra[-1], torch.Tensor):
                     preds_3d = extra[-1]
             elif isinstance(extra, torch.Tensor):
@@ -155,6 +158,7 @@ class Detection3DValidator(DetectionValidator):
         if self.args.verbose:
             LOGGER.info(f"DEBUG postprocess: Final preds_2d shape: {preds_2d.shape if preds_2d is not None else 'None'}")
             LOGGER.info(f"DEBUG postprocess: Final preds_3d shape: {preds_3d.shape if preds_3d is not None else 'None'}")
+            LOGGER.info(f"DEBUG postprocess: preds_2d has 3D params: {preds_2d.shape[1] > 6 if preds_2d is not None and preds_2d.dim() == 3 else 'N/A'}")
 
         # Append 3D params to 2D predictions so NMS preserves them
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
@@ -163,23 +167,29 @@ class Detection3DValidator(DetectionValidator):
             params_3d_reshaped = preds_3d.permute(0, 2, 1).contiguous()  # (batch, num_anchors, n3d)
             params_3d_for_nms = params_3d_reshaped.permute(0, 2, 1).contiguous()  # (batch, n3d, num_anchors)
 
-            # Concatenate 3D params to 2D predictions along channel dimension
+            # Check if preds_2d already has 3D params (inference mode) or just 2D (training mode)
             if preds_2d.shape[1] > 6:
                 # Extract 2D + class channels (first 6 + nc)
                 nc = preds_2d.shape[1] - 6 - self.n3d
-                if nc > 0:
-                    # Replace existing 3D params with raw params
+                if nc > 0 and preds_2d.shape[1] == 6 + nc + self.n3d:
+                    # preds_2d has 2D + classes + 3D params, replace 3D with raw
                     preds_2d_for_nms = torch.cat([preds_2d[:, :6+nc], params_3d_for_nms], dim=1)
+                    if self.args.verbose:
+                        LOGGER.info(f"DEBUG postprocess: Replacing decoded 3D with raw 3D, nc={nc}, new shape: {preds_2d_for_nms.shape}")
                 else:
-                    # Just use 2D boxes + raw 3D params
-                    preds_2d_for_nms = torch.cat([preds_2d[:, :6], params_3d_for_nms], dim=1)
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG postprocess: Added {self.n3d} 3D params, nc={nc}, new shape: {preds_2d_for_nms.shape}")
+                    # preds_2d has only 2D + classes, append raw 3D params
+                    preds_2d_for_nms = torch.cat([preds_2d, params_3d_for_nms], dim=1)
+                    if self.args.verbose:
+                        LOGGER.info(f"DEBUG postprocess: Appending raw 3D to 2D, nc={nc}, new shape: {preds_2d_for_nms.shape}")
             else:
-                # No 3D params in preds_2d yet, just use it as is
-                preds_2d_for_nms = preds_2d
+                # No 3D params in preds_2d, just use 2D + raw 3D
+                preds_2d_for_nms = torch.cat([preds_2d, params_3d_for_nms], dim=1)
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG postprocess: Appending raw 3D to 2D-only input, new shape: {preds_2d_for_nms.shape}")
         else:
             preds_2d_for_nms = preds_2d
+            if self.args.verbose:
+                LOGGER.warning(f"DEBUG postprocess: No 3D params found, using 2D only")
 
         # Apply NMS - NMS will preserve all channels after the first 6
         from ultralytics.utils.ops import non_max_suppression
