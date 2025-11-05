@@ -9,6 +9,7 @@ import torch
 from ultralytics.models.yolo.detect import DetectionValidator
 from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import DetMetrics, box_iou, compute_ap
+from ultralytics.utils.ops import scale_boxes
 
 
 class Detection3DValidator(DetectionValidator):
@@ -44,6 +45,25 @@ class Detection3DValidator(DetectionValidator):
         self.rot_errors = defaultdict(list)
         self.kitti_stats = None
         self.kitti_gt_counts = None
+
+    def _prepare_pred(self, pred, pbatch):
+        """
+        Override to preserve 3D parameters (not just first 4 bbox channels).
+
+        Args:
+            pred: Prediction tensor with shape (n, 13) - [x, y, w, h, conf, cls, x_3d, y_3d, z_3d, h_3d, w_3d, l_3d, rot_y]
+            pbatch: Prepared batch dict with image info
+
+        Returns:
+            predn: Scaled predictions preserving all channels
+        """
+        predn = pred.clone()
+        # Scale only the 2D bbox coordinates (first 4 channels)
+        # The 3D parameters (channels 6-12) don't need scaling as they're in world coordinates
+        scale_boxes(
+            pbatch["imgsz"], predn[:, :4], pbatch["ori_shape"], ratio_pad=pbatch["ratio_pad"]
+        )  # native-space pred
+        return predn
 
     def preprocess(self, batch):
         """Preprocesses batch of images for YOLO training."""
