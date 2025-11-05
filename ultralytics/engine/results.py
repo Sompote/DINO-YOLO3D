@@ -1002,10 +1002,10 @@ class Boxes(BaseTensor):
         if boxes.ndim == 1:
             boxes = boxes[None, :]
         n = boxes.shape[-1]
-        assert n in {6, 7, 11}, f"expected 6, 7, or 11 values but got {n}"  # xyxy, track_id, conf, cls, 3d_params
+        assert n in {6, 7, 11, 13}, f"expected 6, 7, 11, or 13 values but got {n}"  # xyxy, track_id, conf, cls, 3d_params
         super().__init__(boxes, orig_shape)
         self.is_track = n == 7
-        self.is_3d = n == 11  # 3D detection: [xyxy, conf, cls, depth, h_3d, w_3d, l_3d, rotation_y]
+        self.is_3d = n in {11, 13}  # 3D detection: 11=[xyxy, conf, cls, depth, h, w, l, rot], 13=[xyxy, conf, cls, x, y, z, h, w, l, rot]
         self.orig_shape = orig_shape
 
     @property
