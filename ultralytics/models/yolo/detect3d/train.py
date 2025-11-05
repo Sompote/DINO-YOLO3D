@@ -41,6 +41,15 @@ class Detection3DTrainer(BaseTrainer):
             batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
         """
         gs = max(int(de_parallel(self.model).stride.max() if self.model else 0), 32)
+
+        # Handle valpercent for validation mode
+        val_fraction = 1.0
+        if mode == "val" and hasattr(self.args, "valpercent"):
+            if self.args.valpercent < 100.0:
+                val_fraction = self.args.valpercent / 100.0
+                if RANK == 0:
+                    LOGGER.info(f"Using {self.args.valpercent}% of validation data for validation")
+
         return KITTIDataset(
             img_path=img_path,
             imgsz=self.args.imgsz,
@@ -56,9 +65,7 @@ class Detection3DTrainer(BaseTrainer):
             task="detect3d",
             classes=self.args.classes,
             data=self.data,
-            fraction=self.args.fraction if mode == "train" else (
-                getattr(self.args, "val_fraction", 1.0) if mode == "val" else 1.0
-            ),
+            fraction=self.args.fraction if mode == "train" else val_fraction,
         )
 
     def get_dataloader(self, dataset_path, batch_size=16, rank=0, mode="train"):
