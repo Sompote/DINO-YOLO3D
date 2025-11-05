@@ -481,20 +481,20 @@ model.export(format='onnx')
 
 - ⚠️ `Boxes3D` results class not yet implemented
 - ⚠️ No 3D bounding box visualization
-- ⚠️ 3D IoU and 3D mAP not calculated
 - ⚠️ Camera calibration not integrated in inference
 - ⚠️ Depth map refinement not implemented
+
+> **✅ FIXED**: KmAP (KITTI 3D mAP) now displays correctly! See [KMAP_FIX_SUMMARY.md](KMAP_FIX_SUMMARY.md) for details.
 
 ### Roadmap
 
 **Short-term:**
+- [x] ✅ Add 3D IoU calculation and KmAP evaluation
 - [ ] Implement `Boxes3D` class in `engine/results.py`
 - [ ] Add 3D box visualization (projected onto image)
-- [ ] Add 3D IoU calculation
 - [ ] Integrate camera calibration
 
 **Mid-term:**
-- [ ] Add 3D mAP metric calculation
 - [ ] Bird's eye view visualization
 - [ ] Depth map refinement module
 - [ ] Orientation binning (like SMOKE)
