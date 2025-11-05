@@ -1,9 +1,11 @@
-# YOLOv12-3D: 3D Object Detection for KITTI Dataset
+# cd YOLOv12-3D
 
 [![KMUTT](https://img.shields.io/badge/Made%20by-KMUTT%20Civil%20Engineering-orange)](https://www.kmutt.ac.th/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green.svg)](LICENSE)
+
+**3D Object Detection for KITTI Dataset**
 
 **Developed by AI Research Group, Department of Civil Engineering**
 **King Mongkut's University of Technology Thonburi (KMUTT)**
@@ -47,8 +49,8 @@ A professional implementation extending YOLOv12 with 3D object detection capabil
 
 ```bash
 # Clone repository
-git clone https://github.com/your-repo/yolov12-3d.git
-cd yolov12-3d
+git clone https://github.com/Sompote/YOLOv12-3D.git
+cd cd YOLOv12-3D
 
 # Install dependencies
 pip install -r requirements.txt
@@ -217,11 +219,11 @@ python yolo3d.py train \
 
 | Model | Parameters | Speed | mAP50-95* | Use Case |
 |-------|-----------|-------|-----------|----------|
-| **YOLOv12n-3D** | 2.6M | ⚡⚡⚡⚡⚡ | ~30% | Edge devices, real-time |
-| **YOLOv12s-3D** | 9.1M | ⚡⚡⚡⚡ | ~35% | Balanced performance |
-| **YOLOv12m-3D** | 19.7M | ⚡⚡⚡ | ~40% | High accuracy |
-| **YOLOv12l-3D** | 26.5M | ⚡⚡ | ~42% | Best accuracy |
-| **YOLOv12x-3D** | 59.4M | ⚡ | ~44% | Maximum accuracy |
+| **cd YOLOv12n-3D** | 2.6M | ⚡⚡⚡⚡⚡ | ~30% | Edge devices, real-time |
+| **cd YOLOv12s-3D** | 9.1M | ⚡⚡⚡⚡ | ~35% | Balanced performance |
+| **cd YOLOv12m-3D** | 19.7M | ⚡⚡⚡ | ~40% | High accuracy |
+| **cd YOLOv12l-3D** | 26.5M | ⚡⚡ | ~42% | Best accuracy |
+| **cd YOLOv12x-3D** | 59.4M | ⚡ | ~44% | Maximum accuracy |
 
 *Estimated performance on KITTI dataset
 
@@ -292,7 +294,7 @@ Total Loss = box_loss + cls_loss + dfl_loss + depth_loss + dim_loss + rot_loss
 ## 📁 Project Structure
 
 ```
-yolov12-3d/
+cd YOLOv12-3D/
 ├── yolo3d.py                          # Main CLI tool
 ├── scripts/
 │   ├── kitti_setup.py                 # Dataset setup CLI
@@ -312,7 +314,7 @@ yolov12-3d/
 │       └── datasets/kitti-3d.yaml     # Dataset config
 ├── CLI_GUIDE.md                       # Complete CLI documentation
 ├── YOLO3D_QUICKREF.md                # Quick reference
-└── readme.md                          # This file
+└── README.md                          # This file
 ```
 
 ---
