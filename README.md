@@ -50,7 +50,7 @@ A professional implementation extending YOLOv12 with 3D object detection capabil
 ```bash
 # Clone repository
 git clone https://github.com/Sompote/YOLOv12-3D.git
-cd cd YOLOv12-3D
+cd YOLOv12-3D
 
 # Install dependencies
 pip install -r requirements.txt
@@ -210,7 +210,7 @@ python yolo3d.py train \
 - ✅ Progress tracking and metrics reporting
 - ✅ Confirmation prompts (skippable with `-y`)
 
-📖 **Full Documentation**: [CLI_GUIDE.md](CLI_GUIDE.md)  
+📖 **Full Documentation**: [CLI_GUIDE.md](CLI_GUIDE.md)
 📋 **Quick Reference**: [YOLO3D_QUICKREF.md](YOLO3D_QUICKREF.md)
 
 ---
@@ -384,7 +384,7 @@ python yolo3d.py train \
 # Tune loss weights if needed
 # Edit ultralytics/utils/loss.py:
 #   self.depth_weight = 1.0
-#   self.dim_weight = 1.0  
+#   self.dim_weight = 1.0
 #   self.rot_weight = 1.0
 ```
 
@@ -557,9 +557,9 @@ See [LICENSE](LICENSE) for details.
 
 **Developed by:**
 
-**AI Research Group**  
-**Department of Civil Engineering**  
-**King Mongkut's University of Technology Thonburi (KMUTT)**  
+**AI Research Group**
+**Department of Civil Engineering**
+**King Mongkut's University of Technology Thonburi (KMUTT)**
 Bangkok, Thailand
 
 🌐 Website: [https://www.kmutt.ac.th/](https://www.kmutt.ac.th/)
