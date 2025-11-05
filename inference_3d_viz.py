@@ -19,6 +19,7 @@ class KITTI3DVisualizer:
     """Visualize 3D detections on KITTI images."""
 
     def __init__(self):
+        """Initialize KITTI 3D visualizer."""
         # KITTI class names
         self.class_names = {
             0: 'Car', 1: 'Truck', 2: 'Pedestrian', 3: 'Cyclist',
@@ -81,17 +82,19 @@ class KITTI3DVisualizer:
         h, w, l = dimensions
         x, y, z = location
 
-        # 3D bounding box corners (in object coordinate system)
-        # Order: back face (clockwise from top-left), front face (clockwise)
+        # CRITICAL: In KITTI, location (x,y,z) is at the BOTTOM CENTER of the box!
+        # Camera coordinates: X=right, Y=down, Z=forward
+        # So: y=0 is at bottom, y=-h is at top (upward is negative y)
+        # Create 8 corners: 4 bottom corners (dy=0) + 4 top corners (dy=-h)
         corners_3d = np.array([
-            [l/2, -h/2, w/2],   # back top right
-            [l/2, h/2, w/2],    # back bottom right
-            [-l/2, h/2, w/2],   # back bottom left
-            [-l/2, -h/2, w/2],  # back top left
-            [l/2, -h/2, -w/2],  # front top right
-            [l/2, h/2, -w/2],   # front bottom right
-            [-l/2, h/2, -w/2],  # front bottom left
-            [-l/2, -h/2, -w/2], # front top left
+            [w/2, 0, l/2],       # back bottom right (at location height)
+            [w/2, -h, l/2],      # back top right (extends upward by h)
+            [-w/2, -h, l/2],     # back top left
+            [-w/2, 0, l/2],      # back bottom left
+            [w/2, 0, -l/2],      # front bottom right
+            [w/2, -h, -l/2],     # front top right
+            [-w/2, -h, -l/2],    # front top left
+            [-w/2, 0, -l/2],     # front bottom left
         ])
 
         # Rotation matrix around Y axis
@@ -168,8 +171,7 @@ class KITTI3DVisualizer:
             print(f"  {i+1}. {class_name} (conf={conf:.3f})")
             print(f"     2D bbox: [{x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}]")
             print(f"     2D center: ({center_2d_x:.1f}, {center_2d_y:.1f})")
-            print(f"     3D location (computed): x={x_3d:.2f}m, y={y_3d:.2f}m, z={z_3d:.2f}m")
-            print(f"     3D location (predicted): x={x_3d_pred:.2f}m, y={y_3d_pred:.2f}m")
+            print(f"     3D location (bottom center): x={x_3d:.2f}m, y={y_3d:.2f}m, z={z_3d:.2f}m")
             print(f"     3D dimensions: h={h_3d:.2f}m, w={w_3d:.2f}m, l={l_3d:.2f}m")
             print(f"     Rotation: {rot_y:.3f} rad ({math.degrees(rot_y):.1f}°)")
 
