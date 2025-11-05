@@ -440,7 +440,9 @@ class Detection3DValidator(DetectionValidator):
         # Decode 7 parameters: x, y, z, h, w, l, rotation_y
         loc_x = (torch.sigmoid(params[:, 0]) - 0.5) * 100.0  # [-50, 50]m
         loc_y = (torch.sigmoid(params[:, 1]) - 0.5) * 100.0  # [-50, 50]m
-        depth = torch.sigmoid(params[:, 2]) * 100.0  # [0, 100]m
+        # Depth with inverse sigmoid encoding (MonoFlex-style): d = 1/sigmoid(x) - 1
+        depth = 1.0 / (torch.sigmoid(params[:, 2]) + 1e-6) - 1.0
+        depth = depth.clamp(0, 100)  # [0, 100]m
         dims = torch.sigmoid(params[:, 3:6]) * 10.0  # [0, 10]m (h, w, l)
         rot = (torch.sigmoid(params[:, 6]) - 0.5) * 2 * math.pi  # [-π, π]
 
@@ -541,7 +543,9 @@ class Detection3DValidator(DetectionValidator):
                     # Decode using same logic as Detect3D.forward()
                     pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
                     pred_loc_y = (torch.sigmoid(params_3d[:, 1:2]) - 0.5) * 100.0
-                    pred_depth = torch.sigmoid(params_3d[:, 2:3]) * 100.0
+                    # Depth with inverse sigmoid encoding (MonoFlex-style)
+                    pred_depth = 1.0 / (torch.sigmoid(params_3d[:, 2:3]) + 1e-6) - 1.0
+                    pred_depth = pred_depth.clamp(0, 100)
                     pred_dims = torch.sigmoid(params_3d[:, 3:6]) * 10.0
                     pred_rot = (torch.sigmoid(params_3d[:, 6:7]) - 0.5) * 2 * math.pi
 

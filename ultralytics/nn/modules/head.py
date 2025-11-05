@@ -252,8 +252,10 @@ class Detect3D(Detect):
             loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
             # location_y: can be negative or positive (-50m to +50m)
             loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
-            # location_z (depth): positive value (0-100m)
-            loc_z = params_3d[:, 2:3, :].sigmoid() * 100
+            # location_z (depth): inverse sigmoid encoding (MonoFlex-style)
+            # Formula: d = 1/sigmoid(x) - 1, better distribution than linear scaling
+            loc_z = 1.0 / (params_3d[:, 2:3, :].sigmoid() + 1e-6) - 1.0
+            loc_z = loc_z.clamp(0, 100)  # Constrain to reasonable range
             # 3D dimensions: positive values
             dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # scale to reasonable size (0-10m)
             # rotation_y: -pi to pi
@@ -287,7 +289,9 @@ class Detect3D(Detect):
         # Extract 3D parameters
         loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
         loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
-        loc_z = params_3d[:, 2:3, :].sigmoid() * 100
+        # Depth with inverse sigmoid encoding (MonoFlex-style)
+        loc_z = 1.0 / (params_3d[:, 2:3, :].sigmoid() + 1e-6) - 1.0
+        loc_z = loc_z.clamp(0, 100)
         dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # [h, w, l]
         rotation_y = (params_3d[:, 6:7, :].sigmoid() - 0.5) * 2 * math.pi
 

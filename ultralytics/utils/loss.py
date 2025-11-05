@@ -889,7 +889,9 @@ class v8Detection3DLoss(v8DetectionLoss):
                 # Extract predicted 3D parameters [x, y, z, h, w, l, rot_y]
                 pred_loc_x = (params_3d[:, :, 0:1].sigmoid() - 0.5) * 100  # [-50m, 50m]
                 pred_loc_y = (params_3d[:, :, 1:2].sigmoid() - 0.5) * 100  # [-50m, 50m]
-                pred_depth = params_3d[:, :, 2:3].sigmoid() * 100  # [0, 100m]
+                # Depth with inverse sigmoid encoding (MonoFlex-style): d = 1/sigmoid(x) - 1
+                pred_depth = 1.0 / (params_3d[:, :, 2:3].sigmoid() + 1e-6) - 1.0
+                pred_depth = pred_depth.clamp(0, 100)  # [0, 100m]
                 pred_dims = params_3d[:, :, 3:6].sigmoid() * 10  # [0, 10m]
                 pred_rot = (params_3d[:, :, 6:7].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
 
