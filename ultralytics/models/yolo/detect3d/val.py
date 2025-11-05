@@ -174,36 +174,31 @@ class Detection3DValidator(DetectionValidator):
             LOGGER.info(f"DEBUG postprocess: Final preds_2d shape: {preds_2d.shape if preds_2d is not None else 'None'}")
             LOGGER.info(f"DEBUG postprocess: Final preds_3d shape: {preds_3d.shape if preds_3d is not None else 'None'}")
 
-        # Append 3D params to 2D predictions so NMS preserves them
+        # Extract and append 3D params based on mode
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
-            # Shape: (batch, n3d, num_anchors) -> (batch, num_anchors, n3d) -> (batch, n3d, num_anchors)
-            # NMS expects (batch, channels, num_anchors)
-            params_3d_reshaped = preds_3d.permute(0, 2, 1).contiguous()  # (batch, num_anchors, n3d)
-            params_3d_for_nms = params_3d_reshaped.permute(0, 2, 1).contiguous()  # (batch, n3d, num_anchors)
+            # preds_3d has shape (batch, n3d, num_anchors) from Detect3D.forward()
+            # We need to append these to preds_2d before NMS
 
-            # Check if preds_2d already has 3D params (inference mode) or just 2D (training mode)
+            # Check if we're in inference mode (where 3D params are already in preds_2d)
             if preds_2d.shape[1] > 6:
-                # Extract 2D + class channels (first 6 + nc)
-                nc = preds_2d.shape[1] - 6 - self.n3d
-                if nc > 0 and preds_2d.shape[1] == 6 + nc + self.n3d:
-                    # preds_2d has 2D + classes + 3D params, replace 3D with raw
-                    preds_2d_for_nms = torch.cat([preds_2d[:, :6+nc], params_3d_for_nms], dim=1)
-                    if self.args.verbose:
-                        LOGGER.info(f"DEBUG postprocess: Replacing decoded 3D with raw 3D, nc={nc}, new shape: {preds_2d_for_nms.shape}")
-                else:
-                    # preds_2d has only 2D + classes, append raw 3D params
-                    preds_2d_for_nms = torch.cat([preds_2d, params_3d_for_nms], dim=1)
-                    if self.args.verbose:
-                        LOGGER.info(f"DEBUG postprocess: Appending raw 3D to 2D, nc={nc}, new shape: {preds_2d_for_nms.shape}")
-            else:
-                # No 3D params in preds_2d, just use 2D + raw 3D
-                preds_2d_for_nms = torch.cat([preds_2d, params_3d_for_nms], dim=1)
+                # 3D params are already in preds_2d (decoded format from Detect3D.forward())
+                # During inference, Detect3D.forward() already concatenated decoded 3D params
+                # So we don't need to do anything - just use preds_2d as is!
+                preds_2d_for_nms = preds_2d
                 if self.args.verbose:
-                    LOGGER.info(f"DEBUG postprocess: Appending raw 3D to 2D-only input, new shape: {preds_2d_for_nms.shape}")
+                    LOGGER.info(f"DEBUG postprocess: Using existing decoded 3D params in preds_2d")
+                    LOGGER.info(f"DEBUG postprocess: Shape: {preds_2d_for_nms.shape}")
+            else:
+                # No 3D params in preds_2d (training mode)
+                # We need to append raw 3D params
+                preds_2d_for_nms = torch.cat([preds_2d, preds_3d], dim=1)
+                if self.args.verbose:
+                    LOGGER.info(f"DEBUG postprocess: Appending RAW 3D to 2D (training mode)")
+                    LOGGER.info(f"DEBUG postprocess: New shape: {preds_2d_for_nms.shape}")
         else:
             preds_2d_for_nms = preds_2d
             if self.args.verbose:
-                LOGGER.warning(f"DEBUG postprocess: No 3D params found, using 2D only")
+                LOGGER.warning(f"DEBUG postprocess: No 3D params found!")
 
         # Apply NMS - NMS will preserve all channels after the first 6
         from ultralytics.utils.ops import non_max_suppression
@@ -484,25 +479,40 @@ class Detection3DValidator(DetectionValidator):
             confidences = pred[:, 4]
             pred_classes = pred[:, 5].to(torch.int64)
 
-            # Extract 3D parameters - use DECODED params directly
+            # Extract 3D parameters
             pred_loc_x = pred_loc_y = pred_depth = pred_dims = pred_rot = None
             if pred.shape[1] > 6:
-                # Extract DECODED 3D params from pred
-                decoded_3d = pred[:, 6:6+self.n3d]
+                # Extract 3D params from pred
+                params_3d = pred[:, 6:6+self.n3d]
+
+                # Check if params are decoded (values > 1) or raw (values in [0,1])
+                # During inference, params are already decoded by Detect3D.forward()
+                # During training mode validation, params are raw (just appended)
+                max_val = params_3d.max().item()
+
+                if max_val > 1.5:
+                    # Already decoded - use directly
+                    pred_loc_x = params_3d[:, 0:1]
+                    pred_loc_y = params_3d[:, 1:2]
+                    pred_depth = params_3d[:, 2:3]
+                    pred_dims = params_3d[:, 3:6]
+                    pred_rot = params_3d[:, 6:7]
+                    if self.args.verbose:
+                        LOGGER.info(f"DEBUG: Using DECODED 3D params (max={max_val:.3f})")
+                else:
+                    # Raw params - decode them
+                    if self.args.verbose:
+                        LOGGER.info(f"DEBUG: Decoding RAW 3D params (max={max_val:.3f})")
+
+                    # Decode using same logic as Detect3D.forward()
+                    pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
+                    pred_loc_y = (torch.sigmoid(params_3d[:, 1:2]) - 0.5) * 100.0
+                    pred_depth = torch.sigmoid(params_3d[:, 2:3]) * 100.0
+                    pred_dims = torch.sigmoid(params_3d[:, 3:6]) * 10.0
+                    pred_rot = (torch.sigmoid(params_3d[:, 6:7]) - 0.5) * 2 * math.pi
 
                 if self.args.verbose:
-                    LOGGER.info(f"DEBUG: Found decoded 3D params, shape: {decoded_3d.shape}")
-
-                # These are already decoded from Detect3D.forward during inference
-                # So we can use them directly without further processing
-                pred_loc_x = decoded_3d[:, 0:1]   # x location
-                pred_loc_y = decoded_3d[:, 1:2]   # y location
-                pred_depth = decoded_3d[:, 2:3]   # z depth
-                pred_dims = decoded_3d[:, 3:6]    # h, w, l dimensions
-                pred_rot = decoded_3d[:, 6:7]     # rotation_y
-
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG: Decoded 3D values:")
+                    LOGGER.info(f"DEBUG: 3D values:")
                     LOGGER.info(f"  loc_x: {pred_loc_x[0].item():.3f}, loc_y: {pred_loc_y[0].item():.3f}, depth: {pred_depth[0].item():.3f}")
                     LOGGER.info(f"  dims: {pred_dims[0].detach().cpu().numpy()}")
                     LOGGER.info(f"  rot: {pred_rot[0].item():.3f} rad ({math.degrees(pred_rot[0].item()):.1f} deg)")
