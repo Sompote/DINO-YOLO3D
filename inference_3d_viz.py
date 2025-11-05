@@ -130,6 +130,12 @@ class KITTI3DVisualizer:
 
         print(f"\nFound {len(detections)} detections:")
 
+        # Extract camera intrinsics from P2
+        fx = P2[0, 0]
+        fy = P2[1, 1]
+        cx = P2[0, 2]
+        cy = P2[1, 2]
+
         for i, det in enumerate(detections):
             # Parse detection
             # Format: [x1, y1, x2, y2, conf, class, x_3d, y_3d, z_3d, h_3d, w_3d, l_3d, rot_y]
@@ -140,9 +146,20 @@ class KITTI3DVisualizer:
             x1, y1, x2, y2 = det[:4]
             conf = det[4]
             cls = int(det[5])
-            x_3d, y_3d, z_3d = det[6:9]
+            x_3d_pred, y_3d_pred, z_3d = det[6:9]
             h_3d, w_3d, l_3d = det[9:12]
             rot_y = det[12]
+
+            # CRITICAL FIX: Compute 3D location from 2D box center and depth
+            # The model predicts x, y in camera space, but they should be computed
+            # from the 2D box center using proper camera projection
+            center_2d_x = (x1 + x2) / 2.0
+            center_2d_y = (y1 + y2) / 2.0
+
+            # Project 2D center to 3D using depth (z) and camera intrinsics
+            # In KITTI, y_3d is the bottom of the object, so we need to adjust
+            x_3d = (center_2d_x - cx) * z_3d / fx
+            y_3d = (center_2d_y - cy) * z_3d / fy + h_3d / 2.0  # Adjust to bottom center
 
             # Get class info
             class_name = self.class_names.get(cls, f'Class_{cls}')
@@ -150,7 +167,9 @@ class KITTI3DVisualizer:
 
             print(f"  {i+1}. {class_name} (conf={conf:.3f})")
             print(f"     2D bbox: [{x1:.0f}, {y1:.0f}, {x2:.0f}, {y2:.0f}]")
-            print(f"     3D location: x={x_3d:.2f}m, y={y_3d:.2f}m, z={z_3d:.2f}m (depth)")
+            print(f"     2D center: ({center_2d_x:.1f}, {center_2d_y:.1f})")
+            print(f"     3D location (computed): x={x_3d:.2f}m, y={y_3d:.2f}m, z={z_3d:.2f}m")
+            print(f"     3D location (predicted): x={x_3d_pred:.2f}m, y={y_3d_pred:.2f}m")
             print(f"     3D dimensions: h={h_3d:.2f}m, w={w_3d:.2f}m, l={l_3d:.2f}m")
             print(f"     Rotation: {rot_y:.3f} rad ({math.degrees(rot_y):.1f}°)")
 
