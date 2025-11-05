@@ -100,6 +100,17 @@ def cmd_train(args):
         print_info("Example: ultralytics/cfg/datasets/kitti-3d.yaml")
         return 1
 
+    # Validate valpercent
+    if args.valpercent < 1 or args.valpercent > 100:
+        print_error(f"Invalid --valpercent value: {args.valpercent}")
+        print_info("Must be between 1 and 100")
+        return 1
+
+    # Warn if using very low validation percentage
+    if args.valpercent < 10:
+        print_warning(f"Using only {args.valpercent}% of validation data - metrics may not be representative!")
+        print_info("Recommended minimum: --valpercent 10")
+
     # Determine model and scale
     model_scale = None
     if args.model.endswith(".pt"):
@@ -120,6 +131,9 @@ def cmd_train(args):
     nbs_display = args.nbs if args.nbs > 0 else "64 (auto)"
     accumulate = max(round((args.nbs if args.nbs > 0 else 64) / args.batch), 1)
 
+    # Validation info
+    val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
+
     config_info = f"""
   Model:           {Colors.BOLD}{model_path}{Colors.ENDC}
   Scale:           {Colors.BOLD}{model_scale if model_scale else 'default'}{Colors.ENDC}
@@ -131,6 +145,7 @@ def cmd_train(args):
   Image Size:      {Colors.BOLD}{args.imgsz}{Colors.ENDC}
   Device:          {Colors.BOLD}{args.device}{Colors.ENDC}
   Workers:         {Colors.BOLD}{args.workers}{Colors.ENDC}
+  Val Data:        {Colors.BOLD}{val_info}{Colors.ENDC}
   Experiment Name: {Colors.BOLD}{args.name}{Colors.ENDC}
 """
     print(config_info)
@@ -199,6 +214,12 @@ def cmd_train(args):
         # Add nbs if specified (controls gradient accumulation)
         if args.nbs > 0:
             train_kwargs["nbs"] = args.nbs
+
+        # Add validation fraction if less than 100%
+        if args.valpercent < 100.0:
+            val_fraction = args.valpercent / 100.0
+            train_kwargs["fraction"] = val_fraction
+            print_info(f"Using {args.valpercent}% of validation data for faster validation")
 
         results = model.train(**train_kwargs)
 
@@ -460,6 +481,7 @@ For more information: python yolo3d.py <command> --help
     parser_train.add_argument("--save", action="store_true", default=True, help="Save checkpoints")
     parser_train.add_argument("--plots", action="store_true", default=True, help="Save training plots")
     parser_train.add_argument("--val", action="store_true", default=True, help="Validate during training")
+    parser_train.add_argument("--valpercent", type=float, default=100.0, help="Percentage of validation data to use (1-100, default: 100). Use lower values for faster validation.")
     parser_train.add_argument("--verbose", action="store_true", help="Verbose output")
     parser_train.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
 
