@@ -1574,11 +1574,22 @@ class DINO3Backbone(nn.Module):
 
     def extract_features(self, features, input_size):
         """Extract features from DINOv3 patch features maintaining spatial dimensions."""
-        B, N_total, D = features.shape
+        # Handle different feature tensor shapes
+        if len(features.shape) == 3:
+            B, N_total, D = features.shape
+        elif len(features.shape) == 4:
+            # If already spatial (B, D, H, W), return as is
+            return features
+        else:
+            raise ValueError(f"Unexpected feature shape: {features.shape}")
+
         H, W = input_size
 
-        # Remove CLS token and keep patch tokens
-        patch_features = features[:, 1:, :]
+        # Remove CLS token and keep patch tokens (if present)
+        if N_total > 1:
+            patch_features = features[:, 1:, :]
+        else:
+            patch_features = features
         N_patches = patch_features.shape[1]
 
         # Calculate patch grid dimensions
@@ -1667,7 +1678,15 @@ class DINO3Backbone(nn.Module):
         # Forward through DINOv3
         with torch.set_grad_enabled(not self.freeze_backbone):
             outputs = self.dino_model(pseudo_rgb_resized)
-            features = outputs.last_hidden_state
+            # Handle different output formats
+            if hasattr(outputs, 'last_hidden_state'):
+                features = outputs.last_hidden_state
+            elif isinstance(outputs, dict) and 'last_hidden_state' in outputs:
+                features = outputs['last_hidden_state']
+            elif isinstance(outputs, (tuple, list)):
+                features = outputs[0] if len(outputs) > 0 else outputs
+            else:
+                features = outputs
 
         # Extract features maintaining spatial structure
         dino_features = self.extract_features(features, (dino_size, dino_size))
