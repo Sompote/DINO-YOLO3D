@@ -1578,18 +1578,42 @@ class DINO3Backbone(nn.Module):
         if len(features.shape) == 3:
             B, N_total, D = features.shape
         elif len(features.shape) == 4:
-            # If already spatial (B, D, H, W), return as is
-            return features
+            # If already spatial (B, D, H, W), apply adapters and return
+            B, D, H_feat, W_feat = features.shape
+            # Permute to (B, H, W, D) for linear layer
+            adapted = features.permute(0, 2, 3, 1)
+            adapted = self.feature_adapter(adapted)
+            adapted = adapted.permute(0, 3, 1, 2)
+            return self.spatial_projection(adapted)
+        elif len(features.shape) == 2:
+            # Single vector (B, D) - expand to spatial
+            B, D = features.shape
+            H, W = input_size
+            patch_h = patch_w = H // self.patch_size
+            # Create spatial grid
+            features = features.unsqueeze(1).expand(B, patch_h * patch_w, D)
+            N_total = patch_h * patch_w
         else:
             raise ValueError(f"Unexpected feature shape: {features.shape}")
 
         H, W = input_size
 
         # Remove CLS token and keep patch tokens (if present)
-        if N_total > 1:
+        # Check if this looks like it has a CLS token (first dimension larger than expected patches)
+        expected_patches = (H // self.patch_size) * (W // self.patch_size)
+
+        if N_total == expected_patches + 1:
+            # Has CLS token, remove it
             patch_features = features[:, 1:, :]
-        else:
+        elif N_total == expected_patches:
+            # No CLS token
             patch_features = features
+        else:
+            # Unexpected number of tokens, try to adapt
+            print(f"Warning: Unexpected number of tokens: {N_total}, expected: {expected_patches} or {expected_patches + 1}")
+            # Take up to expected_patches tokens
+            patch_features = features[:, :expected_patches, :] if N_total > expected_patches else features
+
         N_patches = patch_features.shape[1]
 
         # Calculate patch grid dimensions
@@ -1601,7 +1625,10 @@ class DINO3Backbone(nn.Module):
             patch_h = patch_w = int(N_patches**0.5)
             if patch_h * patch_w > N_patches:
                 patch_h = patch_w = patch_h - 1
-            patch_features = patch_features[:, :patch_h*patch_w, :]
+            if patch_h * patch_w < N_patches:
+                # Truncate to fit
+                patch_features = patch_features[:, :patch_h*patch_w, :]
+            N_patches = patch_h * patch_w
 
         # Reshape to spatial feature map
         features_2d = patch_features.view(B, patch_h, patch_w, D)
@@ -1678,15 +1705,39 @@ class DINO3Backbone(nn.Module):
         # Forward through DINOv3
         with torch.set_grad_enabled(not self.freeze_backbone):
             outputs = self.dino_model(pseudo_rgb_resized)
+
+            # Debug: Check output type and structure
+            # print(f"DEBUG: DINO output type: {type(outputs)}")
+            # print(f"DEBUG: DINO output dir: {dir(outputs) if hasattr(outputs, '__dir__') else 'N/A'}")
+
             # Handle different output formats
             if hasattr(outputs, 'last_hidden_state'):
                 features = outputs.last_hidden_state
-            elif isinstance(outputs, dict) and 'last_hidden_state' in outputs:
-                features = outputs['last_hidden_state']
+            elif isinstance(outputs, dict):
+                if 'last_hidden_state' in outputs:
+                    features = outputs['last_hidden_state']
+                elif 'x_norm_patchtokens' in outputs:
+                    features = outputs['x_norm_patchtokens']
+                elif 'x_norm_clstoken' in outputs:
+                    # If only CLS token, we need to handle differently
+                    features = outputs.get('x_norm_patchtokens', outputs['x_norm_clstoken'])
+                else:
+                    # Try to get first available tensor
+                    features = next((v for v in outputs.values() if torch.is_tensor(v)), None)
+                    if features is None:
+                        raise ValueError(f"Could not find valid features in dict output: {outputs.keys()}")
             elif isinstance(outputs, (tuple, list)):
-                features = outputs[0] if len(outputs) > 0 else outputs
+                if len(outputs) > 0:
+                    features = outputs[0]
+                else:
+                    raise ValueError("Empty tuple/list output from DINO model")
             else:
+                # Direct tensor output
                 features = outputs
+
+            # Validate features shape
+            if features is None or not torch.is_tensor(features):
+                raise ValueError(f"Invalid features extracted from DINO: type={type(features)}")
 
         # Extract features maintaining spatial structure
         dino_features = self.extract_features(features, (dino_size, dino_size))
