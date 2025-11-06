@@ -854,5 +854,9 @@ class KITTIDataset(YOLODataset):
         label["location_3d"] = label.get("location_3d", np.array([]))
         label["rotation_y"] = label.get("rotation_y", np.array([]))
         label["alpha"] = label.get("alpha", np.array([]))
+        # Store difficulty classification fields
+        label["truncation"] = label.get("truncation", np.array([]))
+        label["occlusion"] = label.get("occlusion", np.array([]))
+        label["bbox_height"] = label.get("bbox_height", np.array([]))
 
         return label
