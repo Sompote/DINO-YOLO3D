@@ -78,15 +78,22 @@ YOLOv12-3D/
 ├── scripts/kitti_setup.py    # Dataset automation
 ├── ultralytics/              # Model, loss, and trainer extensions
 ├── assets/                   # Project figures (includes detection sample)
-├── result.mp4                # Example 3D detection video output
+├── result.mp4                # Example 3D detection video output (50MB)
+├── result_preview.gif        # GitHub-playable preview GIF (4MB)
 └── docs & guides             # *.md reference material
 ```
 
 ## Example Results
 
+### Image Detection
 ![3D Detection on Street Scene](assets/yolov12-3d-detection-sample.jpg)
 
-**Video Output:** `result.mp4` - Demonstrates real-time 3D object detection with bounding boxes projected from depth estimation on street scene video.
+### Video Detection (GitHub plays GIF below)
+![3D Detection Result - Playable GIF](result_preview.gif)
+
+**Full Video Output:** `result.mp4` (50MB, 24 seconds) - Full 3D object detection video with bounding boxes on street scene
+**Preview GIF:** `result_preview.gif` (4MB, 5 seconds) - GitHub-playable preview
+**Source Code:** `video_3d_clean.py` - Script for video processing with 3D bounding boxes
 
 ## Contributing & License
 
