@@ -527,6 +527,19 @@ class Detection3DValidator(DetectionValidator):
         gt_occlusion = batch.get("occlusion")
         gt_height = batch.get("bbox_height")
 
+        # Check if 3D ground truth is available (log only for first batch)
+        if len(preds) > 0 and not hasattr(self, '_logged_3d_check'):
+            self._logged_3d_check = True
+            has_3d_gt = gt_dims_all is not None and gt_loc_all is not None and gt_rot_all is not None
+            LOGGER.info(f"DEBUG: 3D GT data available: {has_3d_gt}")
+            if has_3d_gt:
+                LOGGER.info(f"DEBUG: GT dims shape: {gt_dims_all.shape}, GT loc shape: {gt_loc_all.shape}, GT rot shape: {gt_rot_all.shape}")
+                LOGGER.info(f"DEBUG: First pred shape: {preds[0].shape}")
+                if preds[0].shape[1] > 6:
+                    LOGGER.info(f"DEBUG: Pred has 3D params ({preds[0].shape[1] - 6} channels)")
+                else:
+                    LOGGER.warning(f"DEBUG: Pred MISSING 3D params! Only {preds[0].shape[1]} channels (expected > 6)")
+
         for si, pred in enumerate(preds):
             pbatch = self._prepare_batch(si, batch)
             gt_cls = pbatch["cls"]
@@ -736,11 +749,17 @@ class Detection3DValidator(DetectionValidator):
         stats = super().get_stats()
 
         # DEBUG: Check if we have KITTI data
-        if self.args.verbose:
+        if not hasattr(self, '_logged_stats_check'):
+            self._logged_stats_check = True
             LOGGER.info(f"DEBUG get_stats: kitti_stats exists: {self.kitti_stats is not None}")
             if self.kitti_stats:
                 for mode_name in self.kitti_stats.keys():
                     LOGGER.info(f"DEBUG get_stats: mode {mode_name} has {len(self.kitti_stats[mode_name]['moderate'])} classes")
+                    # Check if we have any detections or GT counts
+                    for diff in self.difficulties:
+                        total_gt = sum(self.kitti_gt_counts[mode_name][diff])
+                        total_detections = sum(len(self.kitti_stats[mode_name][diff][cls_id]["conf"]) for cls_id in range(self.nc))
+                        LOGGER.info(f"DEBUG get_stats: {mode_name}/{diff} - GT: {total_gt}, Detections: {total_detections}")
             LOGGER.info(f"DEBUG get_stats: kitti_gt_counts exists: {self.kitti_gt_counts is not None}")
 
         # Compute KITTI mAP for each mode (default, kmap50, kmap70, etc.)
