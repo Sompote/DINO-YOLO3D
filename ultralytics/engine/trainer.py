@@ -520,9 +520,9 @@ class BaseTrainer:
             # Convert metrics dict to list format matching CSV structure
             # Format: [epoch, time, metric1, metric2, ...]
             epoch = [self.epoch + 1]
-            time = [time.time() - self.train_time_start]
+            training_time = [time.time() - self.train_time_start]
             values = list(self.metrics.values())
-            train_results = {col: val for col, val in zip(["epoch", "time"] + list(self.metrics.keys()), epoch + time + values)}
+            train_results = {col: val for col, val in zip(["epoch", "time"] + list(self.metrics.keys()), epoch + training_time + values)}
 
         # Serialize ckpt to a byte buffer once (faster than repeated torch.save() calls)
         buffer = io.BytesIO()
