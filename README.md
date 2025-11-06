@@ -61,6 +61,29 @@ python video_3d_clean.py --max-frames 100 --skip 3  # Combined for fast preview
 
 For exports: `python yolo3d.py export --model best.pt --format onnx`.
 
+## Performance
+
+### Inference Speed
+- **CPU (4 cores):** 2.6 FPS
+- **CPU (YOLOv8-M baseline):** 4 FPS
+- **RTX 4090:** 40-50 FPS
+- **RTX 5090:** 100 FPS
+- **Input Resolution:** 1920x650
+
+### Speed Benchmark Details
+View full benchmark results: [`INFERENCE_SPEED.md`](INFERENCE_SPEED.md)
+
+**Benchmark Configuration:**
+- Test runs: 50 inference runs
+- Warmup: 10 runs
+- Model: YOLOv12-3D (last-4.pt)
+- Image size: 1920x650 pixels
+
+**Optimization Tips:**
+- Use `--skip N` to process every Nth frame for faster processing
+- Reduce input resolution for 2-3x speedup
+- Increase confidence threshold (`--conf 0.5`) for faster post-processing
+
 ## Documentation
 
 - `CLI_GUIDE.md` – full command reference
@@ -68,6 +91,7 @@ For exports: `python yolo3d.py export --model best.pt --format onnx`.
 - `KITTI_DOWNLOAD_GUIDE.md` – manual download walkthrough
 - `scripts/README.md` – dataset automation details
 - `IMPLEMENTATION_SUMMARY.md` – architecture and loss overview
+- `INFERENCE_SPEED.md` – detailed inference speed benchmarks
 
 ## Repository Layout
 
@@ -80,6 +104,8 @@ YOLOv12-3D/
 ├── assets/                   # Project figures (includes detection sample)
 ├── result.mp4                # Example 3D detection video output (50MB)
 ├── result_preview.gif        # GitHub-playable preview GIF (4MB)
+├── benchmark_speed.py        # Speed benchmark script
+├── INFERENCE_SPEED.md        # Performance benchmarks documentation
 └── docs & guides             # *.md reference material
 ```
 
