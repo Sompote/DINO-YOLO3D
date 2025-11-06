@@ -521,39 +521,44 @@ class Detection3DValidator(DetectionValidator):
                 # Extract 3D params from pred
                 params_3d = pred[:, 6:6+self.n3d]
 
-                # Check if params are decoded (values > 1) or raw (values in [0,1])
-                # Strategy: Check dimension channel (ch 3-6). If max < 0.5, likely raw (sigmoid range)
-                # After decoding dims should be [0, 10], so if max(dim) < 0.5, it's still raw
-                dim_max = params_3d[:, 3:6].max().item()
-
-                if dim_max > 0.5:
-                    # Already decoded - use directly
-                    pred_loc_x = params_3d[:, 0:1]
-                    pred_loc_y = params_3d[:, 1:2]
-                    pred_depth = params_3d[:, 2:3]
-                    pred_dims = params_3d[:, 3:6]
-                    pred_rot = params_3d[:, 6:7]
-                    if self.args.verbose:
-                        LOGGER.info(f"DEBUG: Using DECODED 3D params (dim_max={dim_max:.3f})")
+                # Check if params_3d is empty (no detections)
+                if params_3d.shape[0] == 0:
+                    # No detections, skip 3D parameter processing
+                    pass
                 else:
-                    # Raw params - decode them
+                    # Check if params are decoded (values > 1) or raw (values in [0,1])
+                    # Strategy: Check dimension channel (ch 3-6). If max < 0.5, likely raw (sigmoid range)
+                    # After decoding dims should be [0, 10], so if max(dim) < 0.5, it's still raw
+                    dim_max = params_3d[:, 3:6].max().item()
+
+                    if dim_max > 0.5:
+                        # Already decoded - use directly
+                        pred_loc_x = params_3d[:, 0:1]
+                        pred_loc_y = params_3d[:, 1:2]
+                        pred_depth = params_3d[:, 2:3]
+                        pred_dims = params_3d[:, 3:6]
+                        pred_rot = params_3d[:, 6:7]
+                        if self.args.verbose:
+                            LOGGER.info(f"DEBUG: Using DECODED 3D params (dim_max={dim_max:.3f})")
+                    else:
+                        # Raw params - decode them
+                        if self.args.verbose:
+                            LOGGER.info(f"DEBUG: Decoding RAW 3D params (dim_max={dim_max:.3f})")
+
+                        # Decode using same logic as Detect3D.forward()
+                        pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
+                        pred_loc_y = (torch.sigmoid(params_3d[:, 1:2]) - 0.5) * 100.0
+                        # Depth with inverse sigmoid encoding (MonoFlex-style)
+                        pred_depth = 1.0 / (torch.sigmoid(params_3d[:, 2:3]) + 1e-6) - 1.0
+                        pred_depth = pred_depth.clamp(0, 100)
+                        pred_dims = torch.sigmoid(params_3d[:, 3:6]) * 10.0
+                        pred_rot = (torch.sigmoid(params_3d[:, 6:7]) - 0.5) * 2 * math.pi
+
                     if self.args.verbose:
-                        LOGGER.info(f"DEBUG: Decoding RAW 3D params (dim_max={dim_max:.3f})")
-
-                    # Decode using same logic as Detect3D.forward()
-                    pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
-                    pred_loc_y = (torch.sigmoid(params_3d[:, 1:2]) - 0.5) * 100.0
-                    # Depth with inverse sigmoid encoding (MonoFlex-style)
-                    pred_depth = 1.0 / (torch.sigmoid(params_3d[:, 2:3]) + 1e-6) - 1.0
-                    pred_depth = pred_depth.clamp(0, 100)
-                    pred_dims = torch.sigmoid(params_3d[:, 3:6]) * 10.0
-                    pred_rot = (torch.sigmoid(params_3d[:, 6:7]) - 0.5) * 2 * math.pi
-
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG: 3D values:")
-                    LOGGER.info(f"  loc_x: {pred_loc_x[0].item():.3f}, loc_y: {pred_loc_y[0].item():.3f}, depth: {pred_depth[0].item():.3f}")
-                    LOGGER.info(f"  dims: {pred_dims[0].detach().cpu().numpy()}")
-                    LOGGER.info(f"  rot: {pred_rot[0].item():.3f} rad ({math.degrees(pred_rot[0].item()):.1f} deg)")
+                        LOGGER.info(f"DEBUG: 3D values:")
+                        LOGGER.info(f"  loc_x: {pred_loc_x[0].item():.3f}, loc_y: {pred_loc_y[0].item():.3f}, depth: {pred_depth[0].item():.3f}")
+                        LOGGER.info(f"  dims: {pred_dims[0].detach().cpu().numpy()}")
+                        LOGGER.info(f"  rot: {pred_rot[0].item():.3f} rad ({math.degrees(pred_rot[0].item()):.1f} deg)")
 
             # Compute 3D IoU for KITTI matching (instead of 2D IoU)
             pred_corners = None
