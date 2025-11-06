@@ -13,6 +13,7 @@ Monocular YOLOv12 extended with a 3D detection head for the KITTI benchmark. The
 
 - 3D-aware detections (depth, dimensions, yaw) on top of YOLOv12 accuracy and speed
 - Turnkey CLI (`yolo3d.py`) for training, validation, inference, and export
+- **Video 3D detection** with real-time 3D bounding box visualization
 - Automated KITTI setup utilities with verification and split management
 - Multiple model scales (n/s/m/l/x) to balance FPS and accuracy
 
@@ -47,6 +48,15 @@ python yolo3d.py val --model runs/detect/train/weights/best.pt --data kitti-3d.y
 
 # Run inference on an image folder
 python yolo3d.py predict --model runs/detect/train/weights/best.pt --source path/to/images --conf 0.25
+
+# Video 3D Detection
+# Process video with 3D bounding boxes (only 3D boxes, no 2D)
+python video_3d_clean.py --input path/to/video.mov --output result.mp4
+
+# Fast processing options
+python video_3d_clean.py --max-frames 100           # First 100 frames only
+python video_3d_clean.py --skip 5                   # Every 5th frame for speed
+python video_3d_clean.py --max-frames 100 --skip 3  # Combined for fast preview
 ```
 
 For exports: `python yolo3d.py export --model best.pt --format onnx`.
@@ -64,11 +74,19 @@ For exports: `python yolo3d.py export --model best.pt --format onnx`.
 ```
 YOLOv12-3D/
 ├── yolo3d.py                 # Main CLI entry point
+├── video_3d_clean.py         # Video 3D detection script
 ├── scripts/kitti_setup.py    # Dataset automation
 ├── ultralytics/              # Model, loss, and trainer extensions
 ├── assets/                   # Project figures (includes detection sample)
+├── result.mp4                # Example 3D detection video output
 └── docs & guides             # *.md reference material
 ```
+
+## Example Results
+
+![3D Detection on Street Scene](assets/yolov12-3d-detection-sample.jpg)
+
+**Video Output:** `result.mp4` - Demonstrates real-time 3D object detection with bounding boxes projected from depth estimation on street scene video.
 
 ## Contributing & License
 
