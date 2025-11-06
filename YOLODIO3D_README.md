@@ -256,7 +256,7 @@ The DINO3Backbone attempts to load DINO models in the following order:
 ## File Structure
 
 ```
-YOLOv12-3D/
+DINO-YOLO3D/
 ├── yolodio3d.py                    # Main CLI tool
 ├── ultralytics/
 │   ├── nn/

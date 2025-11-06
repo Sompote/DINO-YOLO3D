@@ -1,4 +1,4 @@
-# YOLOv12-3D Command Line Syntax Guide
+# DINO-YOLO3D Command Line Syntax Guide
 
 ## The Problem: Arguments Not Being Recognized
 
@@ -17,7 +17,7 @@ The issue is **NOT with the code** - it's with your **bash command syntax**.
 ```bash
 python yolo3d.py train \
     --model m \
-    --data /workspace/yolor2/YOLOv12-3D/kitti-3d.yaml
+    --data /workspace/yolor2/DINO-YOLO3D/kitti-3d.yaml
     --epochs 400 \        # ← Missing \ on line above!
     --batch 200 \
     --imgsz 640 \
@@ -30,7 +30,7 @@ Bash interprets this as **TWO separate commands**:
 
 **Command 1** (this is what runs):
 ```bash
-python yolo3d.py train --model m --data /workspace/yolor2/YOLOv12-3D/kitti-3d.yaml
+python yolo3d.py train --model m --data /workspace/yolor2/DINO-YOLO3D/kitti-3d.yaml
 ```
 ↑ Uses default values: epochs=100, batch=16
 
@@ -45,7 +45,7 @@ python yolo3d.py train --model m --data /workspace/yolor2/YOLOv12-3D/kitti-3d.ya
 ```bash
 python yolo3d.py train \
     --model m \
-    --data /workspace/yolor2/YOLOv12-3D/kitti-3d.yaml \
+    --data /workspace/yolor2/DINO-YOLO3D/kitti-3d.yaml \
     --epochs 400 \
     --batch 200 \
     --imgsz 640 \
@@ -229,7 +229,7 @@ history 1
 
 ✅ **Correct Command for Your Setup (RTX 5090):**
 ```bash
-python yolo3d.py train --model m --data /workspace/yolor2/YOLOv12-3D/kitti-3d.yaml --epochs 400 --batch 200 --nbs 200 --imgsz 640 --device 0 --name yolov12m-kitti-400ep
+python yolo3d.py train --model m --data /workspace/yolor2/DINO-YOLO3D/kitti-3d.yaml --epochs 400 --batch 200 --nbs 200 --imgsz 640 --device 0 --name yolov12m-kitti-400ep
 ```
 
 This will give you:

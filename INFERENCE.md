@@ -1,6 +1,6 @@
-# YOLOv12-3D Inference Guide
+# DINO-YOLO3D Inference Guide
 
-This guide explains how to use the `infer.py` script to run inference on images and videos with your trained YOLOv12-3D model.
+This guide explains how to use the `infer.py` script to run inference on images and videos with your trained DINO-YOLO3D model.
 
 ## Features
 
@@ -264,18 +264,18 @@ If you use this inference tool in your research, please cite:
 
 ```bibtex
 @software{yolov12_3d_inference,
-  title={YOLOv12-3D Inference Tool},
+  title={DINO-YOLO3D Inference Tool},
   author={AI Research Group, KMUTT},
   year={2024},
-  url={https://github.com/Sompote/YOLOv12-3D}
+  url={https://github.com/Sompote/DINO-YOLO3D}
 }
 ```
 
 ## Support
 
 For issues and questions:
-- GitHub Issues: https://github.com/Sompote/YOLOv12-3D/issues
-- Documentation: https://github.com/Sompote/YOLOv12-3D/wiki
+- GitHub Issues: https://github.com/Sompote/DINO-YOLO3D/issues
+- Documentation: https://github.com/Sompote/DINO-YOLO3D/wiki
 
 ---
 
