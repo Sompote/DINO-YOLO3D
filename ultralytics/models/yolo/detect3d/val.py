@@ -31,6 +31,10 @@ class Detection3DValidator(DetectionValidator):
         super().__init__(dataloader, save_dir, pbar, args, _callbacks)
         self.args.task = "detect3d"
         self.difficulties = ("easy", "moderate", "hard")
+        self.n3d = 7  # Updated: x, y, z, h, w, l, rotation_y (was 5: z, h, w, l, rotation_y)
+        # KITTI uses 40 recall positions (updated 2019) instead of 11 from Pascal VOC
+        self.kitti_recall_positions = 40
+
         # Check if both KmAP50 and KmAP70 should be shown
         self.show_both_kmap = getattr(self.args, 'show_both_kmap', False)
 
@@ -55,9 +59,6 @@ class Detection3DValidator(DetectionValidator):
             else:
                 self.kmap_modes = {'default': {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}}
 
-        self.n3d = 7  # Updated: x, y, z, h, w, l, rotation_y (was 5: z, h, w, l, rotation_y)
-        # KITTI uses 40 recall positions (updated 2019) instead of 11 from Pascal VOC
-        self.kitti_recall_positions = 40
         self._reset_kitti_metrics()
 
     def _reset_kitti_metrics(self):
@@ -69,6 +70,11 @@ class Detection3DValidator(DetectionValidator):
         # Initialize stats for each mode (default, kmap50, kmap70)
         self.kitti_stats = {}  # mode -> difficulty -> class -> {conf: [], tp: []}
         self.kitti_gt_counts = {}  # mode -> difficulty -> class -> count
+
+        # Check if self.nc is available
+        if not hasattr(self, 'nc') or self.nc is None:
+            # Defer initialization until nc is known
+            return
 
         for mode_name in self.kmap_modes.keys():
             self.kitti_stats[mode_name] = {}
@@ -279,11 +285,11 @@ class Detection3DValidator(DetectionValidator):
     def init_metrics(self, model):
         """Initialize standard and KITTI-specific metrics."""
         super().init_metrics(model)
-        self.kitti_stats = {
-            diff: {cls_id: {"conf": [], "tp": []} for cls_id in range(self.nc)} for diff in self.difficulties
-        }
-        self.kitti_gt_counts = {diff: [0 for _ in range(self.nc)] for diff in self.difficulties}
-        # ensure overall buckets exist
+
+        # Initialize metrics for all modes (re-initialize now that self.nc is known)
+        self._reset_kitti_metrics()
+
+        # Ensure error buckets exist
         self.depth_errors = defaultdict(list)
         self.dim_errors = defaultdict(list)
         self.rot_errors = defaultdict(list)
