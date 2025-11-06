@@ -31,16 +31,30 @@ class Detection3DValidator(DetectionValidator):
         super().__init__(dataloader, save_dir, pbar, args, _callbacks)
         self.args.task = "detect3d"
         self.difficulties = ("easy", "moderate", "hard")
-        # KITTI official IoU thresholds: 0.7 for Car/Truck, 0.5 for Pedestrian/Cyclist
-        # If --kitti-iou-threshold is specified (e.g., 0.7), use it for all classes
-        iou_override = getattr(self.args, 'kitti_iou_threshold', 0.0)
-        if iou_override > 0.0:
-            self.kitti_iou_thresholds = {i: iou_override for i in range(self.nc)}
+        # Check if both KmAP50 and KmAP70 should be shown
+        self.show_both_kmap = getattr(self.args, 'show_both_kmap', False)
+
+        if self.show_both_kmap:
+            # Enable dual mode: compute both KmAP50 and KmAP70
+            self.kmap_modes = {
+                'kmap50': {i: 0.5 for i in range(self.nc)},
+                'kmap70': {i: 0.7 for i in range(self.nc)},
+            }
             if self.args.verbose:
                 from ultralytics.utils import LOGGER
-                LOGGER.info(f"Using uniform IoU threshold {iou_override} for all {self.nc} classes (KmAP mode)")
+                LOGGER.info(f"Enabled dual KmAP mode (50 and 70) for all {self.nc} classes")
         else:
-            self.kitti_iou_thresholds = {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}
+            # KITTI official IoU thresholds: 0.7 for Car/Truck, 0.5 for Pedestrian/Cyclist
+            # If --kitti-iou-threshold is specified (e.g., 0.7), use it for all classes
+            iou_override = getattr(self.args, 'kitti_iou_threshold', 0.0)
+            if iou_override > 0.0:
+                self.kmap_modes = {'default': {i: iou_override for i in range(self.nc)}}
+                if self.args.verbose:
+                    from ultralytics.utils import LOGGER
+                    LOGGER.info(f"Using uniform IoU threshold {iou_override} for all {self.nc} classes (KmAP mode)")
+            else:
+                self.kmap_modes = {'default': {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}}
+
         self.n3d = 7  # Updated: x, y, z, h, w, l, rotation_y (was 5: z, h, w, l, rotation_y)
         # KITTI uses 40 recall positions (updated 2019) instead of 11 from Pascal VOC
         self.kitti_recall_positions = 40
@@ -51,8 +65,19 @@ class Detection3DValidator(DetectionValidator):
         self.depth_errors = defaultdict(list)
         self.dim_errors = defaultdict(list)
         self.rot_errors = defaultdict(list)
-        self.kitti_stats = None
-        self.kitti_gt_counts = None
+
+        # Initialize stats for each mode (default, kmap50, kmap70)
+        self.kitti_stats = {}  # mode -> difficulty -> class -> {conf: [], tp: []}
+        self.kitti_gt_counts = {}  # mode -> difficulty -> class -> count
+
+        for mode_name in self.kmap_modes.keys():
+            self.kitti_stats[mode_name] = {}
+            self.kitti_gt_counts[mode_name] = {}
+            for diff in self.difficulties:
+                self.kitti_stats[mode_name][diff] = {}
+                self.kitti_gt_counts[mode_name][diff] = [0] * self.nc
+                for cls_id in range(self.nc):
+                    self.kitti_stats[mode_name][diff][cls_id] = {"conf": [], "tp": []}
 
     def _prepare_pred(self, pred, pbatch):
         """
@@ -489,12 +514,13 @@ class Detection3DValidator(DetectionValidator):
 
             if gt_cls.numel() == 0:
                 # Still record false positives for KITTI metrics
-                for diff in self.difficulties:
-                    for det in pred:
-                        cls_id = int(det[5].item())
-                        if cls_id < self.nc:
-                            self.kitti_stats[diff][cls_id]["conf"].append(float(det[4].item()))
-                            self.kitti_stats[diff][cls_id]["tp"].append(0.0)
+                for mode_name in self.kmap_modes.keys():
+                    for diff in self.difficulties:
+                        for det in pred:
+                            cls_id = int(det[5].item())
+                            if cls_id < self.nc:
+                                self.kitti_stats[mode_name][diff][cls_id]["conf"].append(float(det[4].item()))
+                                self.kitti_stats[mode_name][diff][cls_id]["tp"].append(0.0)
                 continue
 
             mask = batch_idx == si
@@ -505,7 +531,7 @@ class Detection3DValidator(DetectionValidator):
             gt_occ = gt_occlusion[mask] if gt_occlusion is not None else None
             gt_h = gt_height[mask] if gt_height is not None else None
 
-            difficulty_indices = {diff: [] for diff in self.difficulties}
+            difficulty_indices = {mode: {diff: [] for diff in self.difficulties} for mode in self.kmap_modes.keys()}
             for gi in range(len(gt_cls)):
                 trunc_val = gt_tr[gi].item() if gt_tr is not None else 0.0
                 occ_val = gt_occ[gi].item() if gt_occ is not None else 0.0
@@ -513,10 +539,12 @@ class Detection3DValidator(DetectionValidator):
                 flags = self._difficulty_flags(trunc_val, occ_val, height_val)
                 for diff, active in flags.items():
                     if active:
-                        difficulty_indices[diff].append(gi)
+                        for mode_name in self.kmap_modes.keys():
+                            difficulty_indices[mode_name][diff].append(gi)
                         cls_int = int(gt_cls[gi].item())
                         if cls_int < self.nc:
-                            self.kitti_gt_counts[diff][cls_int] += 1
+                            for mode_name in self.kmap_modes.keys():
+                                self.kitti_gt_counts[mode_name][diff][cls_int] += 1
 
             predn = self._prepare_pred(pred, pbatch)
             pred_boxes = predn[:, :4]
@@ -619,43 +647,48 @@ class Detection3DValidator(DetectionValidator):
 
             order = torch.argsort(confidences, descending=True)
 
-            for diff in self.difficulties:
-                gt_index_list = difficulty_indices[diff]
-                used = set()
-                if not gt_index_list:
-                    continue
+            # For each mode (kmap50, kmap70, etc.), compute matches independently
+            for mode_name in self.kmap_modes.keys():
+                thresholds = self.kmap_modes[mode_name]
 
-                for idx in order.tolist():
-                    cls_id = int(pred_classes[idx].item())
-                    if cls_id >= self.nc:
+                for diff in self.difficulties:
+                    gt_index_list = difficulty_indices[mode_name][diff]
+                    used = set()
+                    if not gt_index_list:
                         continue
-                    conf_val = float(confidences[idx].item())
-                    threshold = self.kitti_iou_thresholds.get(cls_id, 0.5)
-                    best_iou = 0.0
-                    best_local = -1
-                    for local_i, gt_global in enumerate(gt_index_list):
-                        if local_i in used:
-                            continue
-                        if int(gt_cls[gt_global].item()) != cls_id:
-                            continue
-                        iou = float(ious[idx, gt_global].item()) if ious.numel() else 0.0
-                        if iou >= threshold and iou > best_iou:
-                            best_iou = iou
-                            best_local = local_i
 
-                    matched = best_local >= 0
-                    self.kitti_stats[diff][cls_id]["conf"].append(conf_val)
-                    self.kitti_stats[diff][cls_id]["tp"].append(1.0 if matched else 0.0)
+                    for idx in order.tolist():
+                        cls_id = int(pred_classes[idx].item())
+                        if cls_id >= self.nc:
+                            continue
+                        conf_val = float(confidences[idx].item())
+                        threshold = thresholds.get(cls_id, 0.5)
+                        best_iou = 0.0
+                        best_local = -1
+                        for local_i, gt_global in enumerate(gt_index_list):
+                            if local_i in used:
+                                continue
+                            if int(gt_cls[gt_global].item()) != cls_id:
+                                continue
+                            iou = float(ious[idx, gt_global].item()) if ious.numel() else 0.0
+                            if iou >= threshold and iou > best_iou:
+                                best_iou = iou
+                                best_local = local_i
 
-                    if matched:
-                        used.add(best_local)
-                        gt_global = gt_index_list[best_local]
-                        if pred_depth is not None and gt_loc is not None:
-                            depth_gt = float(gt_loc[gt_global, 2].item())
-                            self.depth_errors["all"].append(abs(float(pred_depth[idx].item()) - depth_gt))
-                            self.depth_errors[diff].append(abs(float(pred_depth[idx].item()) - depth_gt))
-                        if pred_dims is not None and gt_dims is not None:
-                            dims_gt = gt_dims[gt_global].detach().cpu().numpy()
+                        matched = best_local >= 0
+                        self.kitti_stats[mode_name][diff][cls_id]["conf"].append(conf_val)
+                        self.kitti_stats[mode_name][diff][cls_id]["tp"].append(1.0 if matched else 0.0)
+
+                        # Only record error metrics for the default mode (or first mode)
+                        if mode_name == list(self.kmap_modes.keys())[0] and matched:
+                            used.add(best_local)
+                            gt_global = gt_index_list[best_local]
+                            if pred_depth is not None and gt_loc is not None:
+                                depth_gt = float(gt_loc[gt_global, 2].item())
+                                self.depth_errors["all"].append(abs(float(pred_depth[idx].item()) - depth_gt))
+                                self.depth_errors[diff].append(abs(float(pred_depth[idx].item()) - depth_gt))
+                            if pred_dims is not None and gt_dims is not None:
+                                dims_gt = gt_dims[gt_global].detach().cpu().numpy()
                             dims_pred = pred_dims[idx].detach().cpu().numpy()
                             dim_err = float(np.mean(np.abs(dims_pred - dims_gt)))
                             self.dim_errors["all"].append(dim_err)
@@ -683,59 +716,60 @@ class Detection3DValidator(DetectionValidator):
         if self.args.verbose:
             LOGGER.info(f"DEBUG get_stats: kitti_stats exists: {self.kitti_stats is not None}")
             if self.kitti_stats:
-                LOGGER.info(f"DEBUG get_stats: kitti_stats['moderate'][0] conf: {len(self.kitti_stats['moderate'][0]['conf'])} items")
+                for mode_name in self.kitti_stats.keys():
+                    LOGGER.info(f"DEBUG get_stats: mode {mode_name} has {len(self.kitti_stats[mode_name]['moderate'])} classes")
             LOGGER.info(f"DEBUG get_stats: kitti_gt_counts exists: {self.kitti_gt_counts is not None}")
-            if self.kitti_gt_counts:
-                LOGGER.info(f"DEBUG get_stats: kitti_gt_counts['moderate']: {self.kitti_gt_counts['moderate']}")
 
-        # Compute KITTI mAP first
-        self.kitti_summary = {diff: {} for diff in self.difficulties}
+        # Compute KITTI mAP for each mode (default, kmap50, kmap70, etc.)
+        self.kitti_summary = {mode: {diff: {} for diff in self.difficulties} for mode in self.kmap_modes.keys()}
 
-        for diff in self.difficulties:
-            ap_values = []
-            for cls_id in range(self.nc):
-                class_name = self.names[cls_id]
-                total_gt = self.kitti_gt_counts[diff][cls_id] if self.kitti_gt_counts else 0
-                stats[f"kitti/{diff}/gt/{class_name}"] = total_gt
+        for mode_name in self.kmap_modes.keys():
+            for diff in self.difficulties:
+                ap_values = []
+                for cls_id in range(self.nc):
+                    class_name = self.names[cls_id]
+                    total_gt = self.kitti_gt_counts[mode_name][diff][cls_id]
+                    stats[f"kitti/{mode_name}/{diff}/gt/{class_name}"] = total_gt
 
-                class_stats = self.kitti_stats[diff][cls_id] if self.kitti_stats else {"conf": [], "tp": []}
-                conf_list = class_stats["conf"]
-                tp_list = class_stats["tp"]
+                    class_stats = self.kitti_stats[mode_name][diff][cls_id]
+                    conf_list = class_stats["conf"]
+                    tp_list = class_stats["tp"]
 
-                if total_gt <= 0 or not conf_list:
-                    # Ensure metrics are added for ALL classes to maintain consistent CSV format
-                    stats[f"kitti/{diff}/AP/{class_name}"] = 0.0
-                    stats[f"kitti/{diff}/precision/{class_name}"] = 0.0
-                    stats[f"kitti/{diff}/recall/{class_name}"] = 0.0
-                    continue
+                    if total_gt <= 0 or not conf_list:
+                        # Ensure metrics are added for ALL classes to maintain consistent CSV format
+                        stats[f"kitti/{mode_name}/{diff}/AP/{class_name}"] = 0.0
+                        stats[f"kitti/{mode_name}/{diff}/precision/{class_name}"] = 0.0
+                        stats[f"kitti/{mode_name}/{diff}/recall/{class_name}"] = 0.0
+                        continue
 
-                conf = np.asarray(conf_list)
-                tp = np.asarray(tp_list)
-                order = np.argsort(-conf)
-                tp = tp[order]
-                fp = 1.0 - tp
-                tp_cum = np.cumsum(tp)
-                fp_cum = np.cumsum(fp)
-                recall = tp_cum / (total_gt + 1e-16)
-                precision = tp_cum / (tp_cum + fp_cum + 1e-16)
-                # Use KITTI-specific AP computation (40 recall positions)
-                ap = self._compute_kitti_ap(recall, precision)
+                    conf = np.asarray(conf_list)
+                    tp = np.asarray(tp_list)
+                    order = np.argsort(-conf)
+                    tp = tp[order]
+                    fp = 1.0 - tp
+                    tp_cum = np.cumsum(tp)
+                    fp_cum = np.cumsum(fp)
+                    recall = tp_cum / (total_gt + 1e-16)
+                    precision = tp_cum / (tp_cum + fp_cum + 1e-16)
+                    # Use KITTI-specific AP computation (40 recall positions)
+                    ap = self._compute_kitti_ap(recall, precision)
 
-                stats[f"kitti/{diff}/AP/{class_name}"] = float(ap)
-                stats[f"kitti/{diff}/precision/{class_name}"] = float(precision[-1])
-                stats[f"kitti/{diff}/recall/{class_name}"] = float(recall[-1])
-                ap_values.append(ap)
-                self.kitti_summary[diff][class_name] = float(ap)
+                    stats[f"kitti/{mode_name}/{diff}/AP/{class_name}"] = float(ap)
+                    stats[f"kitti/{mode_name}/{diff}/precision/{class_name}"] = float(precision[-1])
+                    stats[f"kitti/{mode_name}/{diff}/recall/{class_name}"] = float(recall[-1])
+                    ap_values.append(ap)
+                    self.kitti_summary[mode_name][diff][class_name] = float(ap)
 
-            if ap_values:
-                mean_ap = float(np.mean(ap_values))
-                stats[f"kitti/{diff}/mAP"] = mean_ap
-                self.kitti_summary[diff]["mAP"] = mean_ap
+                if ap_values:
+                    mean_ap = float(np.mean(ap_values))
+                    stats[f"kitti/{mode_name}/{diff}/mAP"] = mean_ap
+                    self.kitti_summary[mode_name][diff]["mAP"] = mean_ap
 
         # Replace standard mAP with KITTI mAP for display
-        # Use 'moderate' difficulty as the primary metric (standard in KITTI)
-        if "moderate" in self.kitti_summary and "mAP" in self.kitti_summary["moderate"]:
-            kitti_map = self.kitti_summary["moderate"]["mAP"]
+        # Use 'moderate' difficulty and the first mode as the primary metric
+        first_mode = list(self.kmap_modes.keys())[0]
+        if "moderate" in self.kitti_summary[first_mode] and "mAP" in self.kitti_summary[first_mode]["moderate"]:
+            kitti_map = self.kitti_summary[first_mode]["moderate"]["mAP"]
             stats["metrics/mAP50-95(B)"] = kitti_map  # Override standard mAP with KITTI mAP
             stats["metrics/mAP50(B)"] = kitti_map  # Also set mAP50 to same value
             # Also update self.metrics.results_dict so it shows in the table
@@ -785,24 +819,22 @@ class Detection3DValidator(DetectionValidator):
         if not getattr(self, "kitti_summary", None):
             return
 
-        # Determine IoU threshold mode for display
-        threshold_mode = "default"
-        if hasattr(self, 'kitti_iou_thresholds'):
-            # Check if all classes use the same threshold
-            thresholds = list(self.kitti_iou_thresholds.values())
-            if len(set(thresholds)) == 1:
-                thr = thresholds[0]
-                if thr == 0.7:
-                    threshold_mode = "KmAP70"
-                elif thr == 0.5:
-                    threshold_mode = "KmAP50"
-                else:
-                    threshold_mode = f"KmAP{int(thr*100)}"
+        # Display metrics for each mode
+        for mode_name in self.kmap_modes.keys():
+            # Determine display name for mode
+            if mode_name == "default":
+                mode_display = "default"
+            elif mode_name == "kmap50":
+                mode_display = "KmAP50"
+            elif mode_name == "kmap70":
+                mode_display = "KmAP70"
+            else:
+                mode_display = mode_name
 
-        for diff in self.difficulties:
-            summary = self.kitti_summary.get(diff, {})
-            if not summary:
-                continue
-            map_val = summary.get("mAP")
-            if map_val is not None:
-                LOGGER.info(f"KITTI {diff.capitalize()} {threshold_mode}: {map_val:.3f}")
+            for diff in self.difficulties:
+                summary = self.kitti_summary.get(mode_name, {}).get(diff, {})
+                if not summary:
+                    continue
+                map_val = summary.get("mAP")
+                if map_val is not None:
+                    LOGGER.info(f"KITTI {diff.capitalize()} {mode_display}: {map_val:.3f}")
