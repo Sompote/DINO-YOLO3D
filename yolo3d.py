@@ -491,6 +491,7 @@ For more information: python yolo3d.py <command> --help
     parser_train.add_argument("--val", action="store_true", default=True, help="Validate during training")
     parser_train.add_argument("--noval", action="store_true", help="Skip validation during training (faster training, no metrics)")
     parser_train.add_argument("--valpercent", type=float, default=100.0, help="Percentage of validation data to use (1-100, default: 100). Use lower values for faster validation.")
+    parser_train.add_argument("--kitti-iou-threshold", type=float, default=0.0, help="KITTI IoU threshold for 3D matching (0.0 = use default: 0.7 for cars, 0.5 for others). Set to 0.7 for KmAP70, 0.5 for KmAP50")
     parser_train.add_argument("--verbose", action="store_true", help="Verbose output")
     parser_train.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
 

@@ -32,7 +32,15 @@ class Detection3DValidator(DetectionValidator):
         self.args.task = "detect3d"
         self.difficulties = ("easy", "moderate", "hard")
         # KITTI official IoU thresholds: 0.7 for Car/Truck, 0.5 for Pedestrian/Cyclist
-        self.kitti_iou_thresholds = {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}
+        # If --kitti-iou-threshold is specified (e.g., 0.7), use it for all classes
+        iou_override = getattr(self.args, 'kitti_iou_threshold', 0.0)
+        if iou_override > 0.0:
+            self.kitti_iou_thresholds = {i: iou_override for i in range(self.nc)}
+            if self.args.verbose:
+                from ultralytics.utils import LOGGER
+                LOGGER.info(f"Using uniform IoU threshold {iou_override} for all {self.nc} classes (KmAP mode)")
+        else:
+            self.kitti_iou_thresholds = {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}
         self.n3d = 7  # Updated: x, y, z, h, w, l, rotation_y (was 5: z, h, w, l, rotation_y)
         # KITTI uses 40 recall positions (updated 2019) instead of 11 from Pascal VOC
         self.kitti_recall_positions = 40
@@ -776,10 +784,25 @@ class Detection3DValidator(DetectionValidator):
         super().print_results()
         if not getattr(self, "kitti_summary", None):
             return
+
+        # Determine IoU threshold mode for display
+        threshold_mode = "default"
+        if hasattr(self, 'kitti_iou_thresholds'):
+            # Check if all classes use the same threshold
+            thresholds = list(self.kitti_iou_thresholds.values())
+            if len(set(thresholds)) == 1:
+                thr = thresholds[0]
+                if thr == 0.7:
+                    threshold_mode = "KmAP70"
+                elif thr == 0.5:
+                    threshold_mode = "KmAP50"
+                else:
+                    threshold_mode = f"KmAP{int(thr*100)}"
+
         for diff in self.difficulties:
             summary = self.kitti_summary.get(diff, {})
             if not summary:
                 continue
             map_val = summary.get("mAP")
             if map_val is not None:
-                LOGGER.info(f"KITTI {diff.capitalize()} mAP: {map_val:.3f}")
+                LOGGER.info(f"KITTI {diff.capitalize()} {threshold_mode}: {map_val:.3f}")
