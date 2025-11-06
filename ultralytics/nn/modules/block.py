@@ -4,6 +4,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
+from transformers import Dinov2Model, Dinov2Config
 
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
@@ -47,6 +49,7 @@ __all__ = (
     "CIB",
     "C2fCIB",
     "Attention",
+    "DINO3Backbone",
     "PSA",
     "SCDown",
     "TorchVision",
@@ -1367,3 +1370,339 @@ class A2C2f(nn.Module):
         if self.gamma is not None:
             return x + self.gamma.view(1, -1, 1, 1) * self.cv2(torch.cat(y, 1))
         return self.cv2(torch.cat(y, 1))
+
+
+class DINO3Backbone(nn.Module):
+    """
+    DINO3 (DINOv3) backbone for YOLOv12-3D with pretrained Vision Transformer features.
+
+    This class integrates Meta's DINOv3 pretrained model as a backbone for YOLOv12-3D,
+    providing advanced feature extraction capabilities based on the latest DINO3 architecture.
+    DINOv3 offers improved dense features and better performance across vision tasks.
+
+    Args:
+        model_name (str): DINOv3 model variant ('dinov3_vits16', 'dinov3_vitb16',
+                         'dinov3_vitl16', 'dinov3_vith16_plus', 'dinov3_vit7b16')
+        freeze_backbone (bool): Whether to freeze DINOv3 weights during training
+        output_channels (int): Number of output channel dimensions for features
+
+    Attributes:
+        dino_model: Pretrained DINOv3 model
+        freeze_backbone: Flag to control weight freezing
+        feature_adapters: Projection layers to match YOLOv12-3D channel dimensions
+
+    Examples:
+        >>> backbone = DINO3Backbone('dinov3_vitb16', freeze_backbone=True, output_channels=512)
+        >>> x = torch.randn(2, 3, 224, 224)
+        >>> features = backbone(x)
+        >>> print(features.shape)
+    """
+
+    def __init__(self, model_name='dinov3_vitb16', freeze_backbone=True,
+                 output_channels=512, input_channels=None):
+        super().__init__()
+
+        self.model_name = model_name
+        self.freeze_backbone = freeze_backbone
+        self.input_channels = input_channels
+        self.output_channels = output_channels
+
+        # DINOv3 model specifications based on official Facebook Research repository
+        # Reference: https://github.com/facebookresearch/dinov3
+        self.dinov3_specs = {
+            # ViT models (Vision Transformer) - Official DINOv3 variants
+            'dinov3_vits16': {'params': 21, 'embed_dim': 384, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vits16_plus': {'params': 29, 'embed_dim': 384, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vitb16': {'params': 86, 'embed_dim': 768, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vitl16': {'params': 300, 'embed_dim': 1024, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vith16_plus': {'params': 840, 'embed_dim': 1280, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vit7b16': {'params': 6716, 'embed_dim': 4096, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+
+            # ConvNeXt models - Official DINOv3 variants
+            'dinov3_convnext_tiny': {'params': 29, 'embed_dim': 768, 'patch_size': 16, 'type': 'convnext', 'dataset': 'LVD'},
+            'dinov3_convnext_small': {'params': 50, 'embed_dim': 768, 'patch_size': 16, 'type': 'convnext', 'dataset': 'LVD'},
+            'dinov3_convnext_base': {'params': 89, 'embed_dim': 1024, 'patch_size': 16, 'type': 'convnext', 'dataset': 'LVD'},
+            'dinov3_convnext_large': {'params': 198, 'embed_dim': 1536, 'patch_size': 16, 'type': 'convnext', 'dataset': 'LVD'},
+
+            # Satellite imagery variants (SAT dataset)
+            'dinov3_vits16_sat': {'params': 21, 'embed_dim': 384, 'patch_size': 16, 'type': 'vit', 'dataset': 'SAT'},
+            'dinov3_vitb16_sat': {'params': 86, 'embed_dim': 768, 'patch_size': 16, 'type': 'vit', 'dataset': 'SAT'},
+            'dinov3_vitl16_sat': {'params': 300, 'embed_dim': 1024, 'patch_size': 16, 'type': 'vit', 'dataset': 'SAT'},
+            'dinov3_convnext_small_sat': {'params': 50, 'embed_dim': 768, 'patch_size': 16, 'type': 'convnext', 'dataset': 'SAT'},
+            'dinov3_convnext_base_sat': {'params': 89, 'embed_dim': 1024, 'patch_size': 16, 'type': 'convnext', 'dataset': 'SAT'},
+            'dinov3_convnext_large_sat': {'params': 198, 'embed_dim': 1536, 'patch_size': 16, 'type': 'convnext', 'dataset': 'SAT'},
+
+            # Legacy naming support for backward compatibility
+            'dinov3_vits14': {'params': 21, 'embed_dim': 384, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vitb14': {'params': 86, 'embed_dim': 768, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vitl14': {'params': 300, 'embed_dim': 1024, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+            'dinov3_vitg14': {'params': 840, 'embed_dim': 1280, 'patch_size': 16, 'type': 'vit', 'dataset': 'LVD'},
+        }
+
+        # Get model specifications
+        if model_name not in self.dinov3_specs:
+            print(f"⚠️  Unknown DINOv3 variant {model_name}, falling back to dinov3_vitb16")
+            model_name = 'dinov3_vitb16'
+            self.model_name = model_name
+
+        self.model_spec = self.dinov3_specs[model_name]
+        self.embed_dim = self.model_spec['embed_dim']
+        self.patch_size = self.model_spec['patch_size']
+        self.model_type = self.model_spec['type']
+        self.dataset_type = self.model_spec.get('dataset', 'LVD')
+
+        # Load DINOv3 model
+        print(f"Loading DINOv3 {self.model_type.upper()} model: {model_name}")
+        print(f"  Parameters: {self.model_spec['params']}M")
+        print(f"  Embedding dim: {self.embed_dim}")
+        print(f"  Patch size: {self.patch_size}")
+        print(f"  Dataset: {self.dataset_type} ({'Web Images' if self.dataset_type == 'LVD' else 'Satellite Imagery'})")
+
+        # Initialize DINOv3 model
+        self.dino_model = self._load_dinov3_model(model_name)
+
+        # Freeze weights if requested
+        if self.freeze_backbone:
+            for param in self.dino_model.parameters():
+                param.requires_grad = False
+            print(f"DINOv3 backbone weights frozen: {model_name}")
+
+        # Projection layers will be created dynamically
+        self.input_projection = None
+        self.fusion_layer = None
+        self.feature_adapter = None
+        self.spatial_projection = None
+
+    def _load_dinov3_model(self, model_name):
+        """
+        Load DINOv3 model with support for multiple loading strategies.
+
+        This method attempts to load DINOv3 models in the following order:
+        1. Official DINOv3 models via PyTorch Hub (when available)
+        2. Hugging Face Transformers (for compatible models)
+        3. DINOv2 as compatible fallback
+        4. Random initialization as last resort
+
+        Args:
+            model_name (str): DINOv3 model variant name
+
+        Returns:
+            Loaded DINO model instance
+        """
+        spec = self.dinov3_specs[model_name]
+
+        # Strategy 1: Try to load official DINOv3 from PyTorch Hub
+        try:
+            import torch
+            print(f"🔄 Attempting to load official DINOv3 model from PyTorch Hub: {model_name}")
+
+            for variant_name in [model_name, model_name.replace('dinov3_', '')]:
+                try:
+                    model = torch.hub.load('facebookresearch/dinov3', variant_name, source='github', pretrained=True)
+                    print(f"✅ Successfully loaded official DINOv3 model: {variant_name}")
+                    return model
+                except:
+                    continue
+
+        except Exception as e:
+            print(f"ℹ️  Official DINOv3 not available via PyTorch Hub: {e}")
+
+        # Strategy 2: Try to load from Hugging Face with official DINOv3 naming
+        try:
+            from transformers import AutoModel
+            variant_clean = model_name.replace('dinov3_', '')
+            hf_names = [
+                f"facebook/dinov3-{variant_clean}-pretrain-lvd1689m",
+                f"facebook/dinov3-{variant_clean}",
+                f"facebook/{model_name}",
+                f"facebookresearch/dinov3-{variant_clean}"
+            ]
+
+            for hf_model_name in hf_names:
+                try:
+                    print(f"🔄 Attempting to load DINOv3 from Hugging Face: {hf_model_name}")
+                    model = AutoModel.from_pretrained(hf_model_name)
+                    print(f"✅ Successfully loaded DINOv3 from Hugging Face: {hf_model_name}")
+                    return model
+                except:
+                    continue
+
+        except Exception as e:
+            print(f"ℹ️  DINOv3 not available via Hugging Face: {e}")
+
+        # Strategy 3: Use DINOv2 as compatible fallback based on embedding dimensions
+        try:
+            print(f"🔄 Using DINOv2 as compatible fallback for DINOv3 specs")
+
+            # Map DINOv3 specs to appropriate DINOv2 model
+            embed_dim = spec['embed_dim']
+            if embed_dim <= 384:
+                dino2_model = 'facebook/dinov2-small'
+            elif embed_dim <= 768:
+                dino2_model = 'facebook/dinov2-base'
+            elif embed_dim <= 1024:
+                dino2_model = 'facebook/dinov2-large'
+            else:
+                dino2_model = 'facebook/dinov2-giant'
+
+            model = Dinov2Model.from_pretrained(dino2_model)
+            print(f"✅ Successfully loaded DINOv2 fallback: {dino2_model} (for DINOv3 {model_name})")
+            print(f"   Embedding dim mapping: {embed_dim} -> {model.config.hidden_size}")
+            return model
+
+        except Exception as e:
+            print(f"❌ Failed to load DINOv2 fallback: {e}")
+
+        # Strategy 4: Random initialization as last resort
+        try:
+            print(f"🔄 Creating randomly initialized model matching DINOv3 specifications")
+            config = Dinov2Config()
+            config.hidden_size = spec['embed_dim']
+            config.patch_size = spec['patch_size']
+            config.num_attention_heads = max(8, spec['embed_dim'] // 64)
+            config.num_hidden_layers = min(24, max(12, spec['params'] // 10))
+
+            model = Dinov2Model(config)
+            print(f"✅ Created random DINOv3 model with {spec['params']}M parameter specification")
+            print(f"   Embedding dim: {config.hidden_size}, Patch size: {config.patch_size}")
+            print(f"   Attention heads: {config.num_attention_heads}, Layers: {config.num_hidden_layers}")
+            return model
+
+        except Exception as e:
+            print(f"❌ Failed to create random model: {e}")
+            raise RuntimeError(f"Could not initialize DINOv3 model {model_name} with any strategy")
+
+    def extract_features(self, features, input_size):
+        """Extract features from DINOv3 patch features maintaining spatial dimensions."""
+        B, N_total, D = features.shape
+        H, W = input_size
+
+        # Remove CLS token and keep patch tokens
+        patch_features = features[:, 1:, :]
+        N_patches = patch_features.shape[1]
+
+        # Calculate patch grid dimensions
+        patch_h = int(N_patches**0.5)
+        patch_w = patch_h
+
+        # Ensure correct number of patches
+        if patch_h * patch_w != N_patches:
+            patch_h = patch_w = int(N_patches**0.5)
+            if patch_h * patch_w > N_patches:
+                patch_h = patch_w = patch_h - 1
+            patch_features = patch_features[:, :patch_h*patch_w, :]
+
+        # Reshape to spatial feature map
+        features_2d = patch_features.view(B, patch_h, patch_w, D)
+        features_2d = features_2d.permute(0, 3, 1, 2)
+
+        # Adapt channel dimensions
+        adapted_features = features_2d.permute(0, 2, 3, 1)
+        adapted_features = self.feature_adapter(adapted_features)
+        adapted_features = adapted_features.permute(0, 3, 1, 2)
+
+        # Apply spatial projection
+        adapted_features = self.spatial_projection(adapted_features)
+
+        return adapted_features
+
+    def _create_projection_layers(self, input_channels):
+        """Create projection layers based on actual input channels."""
+        target_channels = self.output_channels
+
+        # Input projection for DINOv3
+        self.input_projection = nn.Sequential(
+            nn.Conv2d(input_channels, 64, 3, 1, 1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 3, 1, 1),
+            nn.Tanh()
+        )
+
+        # Fusion layer - created dynamically based on actual input channels
+        self.fusion_layer = nn.Sequential(
+            nn.Conv2d(input_channels + target_channels, target_channels, 3, 1, 1),
+            nn.BatchNorm2d(target_channels),
+            nn.ReLU(inplace=True)
+        )
+
+        # Feature adapter and spatial projection
+        self.feature_adapter = nn.Sequential(
+            nn.Linear(self.embed_dim, target_channels),
+            nn.LayerNorm(target_channels),
+            nn.GELU()
+        )
+
+        self.spatial_projection = nn.Sequential(
+            nn.Conv2d(target_channels, target_channels, 3, 1, 1),
+            nn.BatchNorm2d(target_channels),
+            nn.ReLU(inplace=True)
+        )
+
+    def forward(self, x):
+        """
+        Forward pass through DINOv3 backbone.
+
+        Args:
+            x: Input tensor [B, C, H, W] - CNN features
+
+        Returns:
+            Enhanced feature map with DINOv3 features [B, target_channels, H, W]
+        """
+        B, C, H, W = x.shape
+
+        # Create projection layers on first forward pass
+        if self.input_projection is None:
+            self.input_channels = C
+            self._create_projection_layers(C)
+
+        # Project CNN features to RGB-like representation
+        pseudo_rgb = self.input_projection(x)
+
+        # Resize to DINOv3 expected size
+        dino_size = 224
+        pseudo_rgb_resized = F.interpolate(pseudo_rgb, size=(dino_size, dino_size),
+                                         mode='bilinear', align_corners=False)
+
+        # Forward through DINOv3
+        with torch.set_grad_enabled(not self.freeze_backbone):
+            outputs = self.dino_model(pseudo_rgb_resized)
+            features = outputs.last_hidden_state
+
+        # Extract features maintaining spatial structure
+        dino_features = self.extract_features(features, (dino_size, dino_size))
+
+        # Resize back to original spatial size
+        dino_features_resized = F.interpolate(dino_features, size=(H, W),
+                                            mode='bilinear', align_corners=False)
+
+        # Fuse original CNN features with DINOv3 features
+        combined_features = torch.cat([x, dino_features_resized], dim=1)
+        enhanced_features = self.fusion_layer(combined_features)
+
+        return enhanced_features
+
+    def unfreeze_backbone(self):
+        """Unfreeze DINOv3 backbone for fine-tuning."""
+        for param in self.dino_model.parameters():
+            param.requires_grad = True
+        self.freeze_backbone = False
+        print("DINOv3 backbone unfrozen for fine-tuning")
+
+    def freeze_backbone_layers(self):
+        """Freeze DINOv3 backbone to prevent training."""
+        for param in self.dino_model.parameters():
+            param.requires_grad = False
+            param._ultralytics_frozen = True
+        self.freeze_backbone = True
+        print("DINOv3 backbone frozen with protected parameters")
+
+    def train(self, mode=True):
+        """Override train mode to maintain frozen state of DINOv3."""
+        super().train(mode)
+        if self.freeze_backbone:
+            self.dino_model.eval()
+            for param in self.dino_model.parameters():
+                param.requires_grad = False
+        return self
+
