@@ -44,6 +44,7 @@ from ultralytics.nn.modules import (
     ConvTranspose,
     Detect,
     Detect3D,
+    DINO3Backbone,
     DWConv,
     DWConvTranspose2d,
     Focus,
