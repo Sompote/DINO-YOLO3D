@@ -32,6 +32,29 @@ pip install ultralytics torch torchvision transformers
 
 **Note**: The `transformers` package is required for DINO ViT-B integration. If you're only using the base YOLOv12-3D model (without DINO), you can skip this dependency.
 
+### Hugging Face Login (Required for DINO Models)
+
+To use DINO-enhanced models, you need to authenticate with Hugging Face:
+
+```bash
+# Install huggingface_hub if not already installed
+pip install huggingface_hub
+
+# Login to Hugging Face (you'll be prompted for your token)
+huggingface-cli login
+
+# Alternative: Login programmatically in Python
+python -c "from huggingface_hub import login; login()"
+```
+
+**Get your Hugging Face token:**
+1. Create a free account at [huggingface.co](https://huggingface.co)
+2. Go to Settings → Access Tokens
+3. Create a new token (read access is sufficient)
+4. Use the token when prompted by `huggingface-cli login`
+
+**Note**: If you're only using the base YOLOv12-3D models (without DINO), you can skip this step.
+
 ### Prepare KITTI
 
 ```bash
