@@ -181,23 +181,27 @@ class KITTI3DVisualizer:
             print(f"     3D dimensions: h={h_3d:.2f}m, w={w_3d:.2f}m, l={l_3d:.2f}m")
             print(f"     Rotation: {rot_y:.3f} rad ({math.degrees(rot_y):.1f}°)")
 
-            # Draw 2D bbox
-            cv2.rectangle(img_vis, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
-
-            # Draw label
-            label = f"{class_name} {conf:.2f}"
-            label_size, _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-            cv2.rectangle(
-                img_vis, (int(x1), int(y1) - label_size[1] - 4), (int(x1) + label_size[0], int(y1)), color, -1
-            )
-            cv2.putText(img_vis, label, (int(x1), int(y1) - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-
             # Project and draw 3D box
             try:
                 location = np.array([x_3d, y_3d, z_3d])
                 dimensions = np.array([h_3d, w_3d, l_3d])
                 corners_2d = self.project_3d_to_2d(location, dimensions, rot_y, P2)
                 self.draw_3d_box(img_vis, corners_2d, color, thickness=2)
+
+                # Draw label near a top corner of the 3D box
+                label = f"{class_name} {conf:.2f}"
+                top_corner = corners_2d[1]  # choose one of the top corners
+                text_pos = (int(top_corner[0]), int(top_corner[1]) - 5)
+                cv2.putText(
+                    img_vis,
+                    label,
+                    text_pos,
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    color,
+                    2,
+                    lineType=cv2.LINE_AA,
+                )
             except Exception as e:
                 print(f"     Warning: Could not draw 3D box: {e}")
 
@@ -307,7 +311,7 @@ def run_inference(model_path, image_paths, data_yaml, output_dir="inference_resu
 
 if __name__ == "__main__":
     # Configuration
-    MODEL_PATH = "/Users/sompoteyouwai/env/yolo3d/yolov12/last-3.pt"
+    MODEL_PATH = "/Users/sompoteyouwai/env/yolo3d/yolov12/last-4.pt"
     DATA_YAML = "kitti-3d.yaml"
     IMAGE_DIR = "/Users/sompoteyouwai/Downloads/datakitti/datasets/kitti/training/image_2"
 
