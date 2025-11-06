@@ -514,6 +514,16 @@ class BaseTrainer:
         """Save model training checkpoints with additional metadata."""
         import io
 
+        # Compute train_results from in-memory metrics (faster, no CSV I/O)
+        train_results = {}
+        if self.metrics:
+            # Convert metrics dict to list format matching CSV structure
+            # Format: [epoch, time, metric1, metric2, ...]
+            epoch = [self.epoch + 1]
+            time = [time.time() - self.train_time_start]
+            values = list(self.metrics.values())
+            train_results = {col: val for col, val in zip(["epoch", "time"] + list(self.metrics.keys()), epoch + time + values)}
+
         # Serialize ckpt to a byte buffer once (faster than repeated torch.save() calls)
         buffer = io.BytesIO()
         torch.save(
@@ -526,7 +536,7 @@ class BaseTrainer:
                 "optimizer": convert_optimizer_state_dict_to_fp16(deepcopy(self.optimizer.state_dict())),
                 "train_args": vars(self.args),  # save as dict
                 "train_metrics": {**self.metrics, **{"fitness": self.fitness}},
-                "train_results": self.read_results_csv(),
+                "train_results": train_results,  # Use in-memory metrics instead of CSV
                 "date": datetime.now().isoformat(),
                 "version": __version__,
                 "license": "AGPL-3.0 (https://ultralytics.com/license)",
