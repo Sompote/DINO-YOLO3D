@@ -286,7 +286,24 @@ class Detection3DValidator(DetectionValidator):
         """Initialize standard and KITTI-specific metrics."""
         super().init_metrics(model)
 
-        # Initialize metrics for all modes (re-initialize now that self.nc is known)
+        # Re-initialize kmap_modes now that self.nc is known
+        # This ensures kmap_modes uses the correct nc value
+        if self.show_both_kmap:
+            # Enable dual mode: compute both KmAP50 and KmAP70
+            self.kmap_modes = {
+                'kmap50': {i: 0.5 for i in range(self.nc)},
+                'kmap70': {i: 0.7 for i in range(self.nc)},
+            }
+        else:
+            # KITTI official IoU thresholds: 0.7 for Car/Truck, 0.5 for Pedestrian/Cyclist
+            # If --kitti-iou-threshold is specified (e.g., 0.7), use it for all classes
+            iou_override = getattr(self.args, 'kitti_iou_threshold', 0.0)
+            if iou_override > 0.0:
+                self.kmap_modes = {'default': {i: iou_override for i in range(self.nc)}}
+            else:
+                self.kmap_modes = {'default': {0: 0.7, 1: 0.7, 2: 0.5, 3: 0.5}}
+
+        # Initialize metrics for active modes only
         self._reset_kitti_metrics()
 
         # Ensure error buckets exist
