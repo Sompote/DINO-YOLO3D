@@ -694,10 +694,8 @@ class Detection3DValidator(DetectionValidator):
                 conf_list = class_stats["conf"]
                 tp_list = class_stats["tp"]
 
-                if total_gt <= 0:
-                    continue
-
-                if not conf_list:
+                if total_gt <= 0 or not conf_list:
+                    # Ensure metrics are added for ALL classes to maintain consistent CSV format
                     stats[f"kitti/{diff}/AP/{class_name}"] = 0.0
                     stats[f"kitti/{diff}/precision/{class_name}"] = 0.0
                     stats[f"kitti/{diff}/recall/{class_name}"] = 0.0
