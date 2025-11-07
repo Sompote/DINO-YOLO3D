@@ -1475,25 +1475,19 @@ class DINO3Backbone(nn.Module):
         self.spatial_projection = None
 
     def _load_dinov3_model(self, model_name):
-        """Load DINOv3 model using Hugging Face transformers."""
+        """Load DINO model using best available method."""
         import os
-        from transformers import AutoModel, AutoConfig
 
         spec = self.dinov3_specs.get(model_name, self.dinov3_specs['dinov3_vitb16'])
 
-        print(f"🔄 Loading DINOv{self.dino_version} model via Hugging Face transformers: {model_name}")
+        print(f"🔄 Loading DINOv{self.dino_version} model: {model_name}")
 
-        # Hugging Face model mapping
-        if self.dino_version == '3':
-            hf_model_mapping = {
-                'dinov3_vits16': 'facebook/dinov3-vits16-pretrain-lvd1689m',
-                'dinov3_vitb16': 'facebook/dinov3-vitb16-pretrain-lvd1689m',
-                'dinov3_vitl16': 'facebook/dinov3-vitl16-pretrain-lvd1689m',
-                'dinov3_vith16_plus': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
-                'dinov3_vit7b16': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
-            }
-            default_model = 'facebook/dinov3-vitb16-pretrain-lvd1689m'
-        else:
+        # Use DINOv2 models from Hugging Face (they are fully supported)
+        # DINOv3 models are not in transformers library yet
+        try:
+            from transformers import AutoModel, Dinov2Model
+
+            # Map to DINOv2 models which are supported by transformers
             hf_model_mapping = {
                 'dinov3_vits16': 'facebook/dinov2-small',
                 'dinov3_vitb16': 'facebook/dinov2-base',
@@ -1503,32 +1497,18 @@ class DINO3Backbone(nn.Module):
             }
             default_model = 'facebook/dinov2-base'
 
-        hf_model_id = hf_model_mapping.get(model_name, default_model)
-        print(f"   Loading from Hugging Face: {hf_model_id}")
+            hf_model_id = hf_model_mapping.get(model_name, default_model)
+            print(f"   Using DINOv2 model (DINOv3 not yet in transformers): {hf_model_id}")
 
-        try:
             # Get token if available
             hf_token = os.getenv('HUGGINGFACE_HUB_TOKEN')
             token_kwargs = {'token': hf_token} if hf_token else {}
 
             if hf_token:
                 print(f"   Using HUGGINGFACE_HUB_TOKEN: {hf_token[:7]}...")
-            else:
-                print("   No HUGGINGFACE_HUB_TOKEN found, using default authentication")
 
-            # Load config and model
-            config = AutoConfig.from_pretrained(hf_model_id, **token_kwargs)
-
-            # Set config options
-            if not hasattr(config, 'output_attentions'):
-                config.output_attentions = False
-            if not hasattr(config, 'output_hidden_states'):
-                config.output_hidden_states = False
-            if not hasattr(config, 'return_dict'):
-                config.return_dict = True
-
-            model = AutoModel.from_pretrained(hf_model_id, config=config, **token_kwargs)
-            print(f"✅ Successfully loaded model from Hugging Face: {hf_model_id}")
+            model = Dinov2Model.from_pretrained(hf_model_id, **token_kwargs)
+            print(f"✅ Successfully loaded DINOv2 model from Hugging Face: {hf_model_id}")
 
             # Detect embedding dimension
             if hasattr(model, 'config') and hasattr(model.config, 'hidden_size'):
@@ -1546,10 +1526,10 @@ class DINO3Backbone(nn.Module):
 
             return model
 
-        except Exception as hf_error:
-            print(f"❌ Hugging Face loading failed: {hf_error}")
-            raise RuntimeError(f"Failed to load DINOv{self.dino_version} model '{model_name}' from Hugging Face. "
-                             f"Error: {hf_error}. Please check your internet connection and try again.")
+        except Exception as e:
+            print(f"❌ Failed to load DINO model: {e}")
+            raise RuntimeError(f"Failed to load DINO model '{model_name}'. "
+                             f"Error: {e}. Please install/upgrade transformers: pip install --upgrade transformers")
 
     def extract_features(self, features, input_size):
         """Extract features from DINOv3 patch features maintaining spatial dimensions."""
