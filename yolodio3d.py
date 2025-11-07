@@ -161,6 +161,17 @@ def cmd_train(args):
         print_error(f"Invalid YOLO size: {args.yolo_size}. Must be 'm' or 'l'")
         sys.exit(1)
 
+    # Validate valpercent
+    if args.valpercent < 1 or args.valpercent > 100:
+        print_error(f"Invalid --valpercent value: {args.valpercent}")
+        print_info("Must be between 1 and 100")
+        sys.exit(1)
+
+    # Warn if using very low validation percentage
+    if args.valpercent < 10:
+        print_warning(f"Using only {args.valpercent}% of validation data - metrics may not be representative!")
+        print_info("Recommended minimum: --valpercent 10")
+
     # Print DINO info if enabled
     if args.use_dino:
         integration_type = "Dual (P0+P3)" if args.dino_integration == "dual" else "Single (P0 only)"
@@ -180,6 +191,10 @@ def cmd_train(args):
     print_info(f"Workers: {args.workers}")
     print_info(f"Output directory: {args.project}/{args.name}")
 
+
+    # Validation data percentage
+    val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
+    print_info(f"Validation data: {val_info}")
     if args.freeze_dino:
         print_info("DINO backbone: FROZEN (recommended for faster training)")
 
@@ -196,6 +211,7 @@ def cmd_train(args):
         'exist_ok': args.exist_ok,
         'resume': args.resume,
         'pretrained': args.pretrained,
+        'valpercent': args.valpercent,
     }
 
     # Add DINO-specific args
@@ -395,6 +411,8 @@ Examples:
                               help='DINO integration type: single=P0 only, dual=P0+P3 (default: dual)')
     parser_train.add_argument('--freeze-dino', action='store_true', default=True,
                               help='Freeze DINO backbone weights (recommended)')
+    parser_train.add_argument('--valpercent', type=float, default=100.0,
+                              help='Percentage of validation data to use (1-100, default: 100)')
     parser_train.set_defaults(func=cmd_train, use_dino=True)
 
     # Val command
