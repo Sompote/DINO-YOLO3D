@@ -9,6 +9,14 @@ Monocular YOLOv12 extended with a 3D detection head and enhanced with DINO (Self
 
 ![YOLOv12-3D detection result on KITTI street scene](assets/yolov12-3d-detection-sample.jpg)
 
+## Recent Updates
+
+**Latest Improvements:**
+- ✨ **Validation Output Cleanup** - Removed debug logging statements for cleaner validation output
+- 🎯 **Enhanced CLI** - Added `--valpercent` parameter for flexible validation dataset sizing
+- 🚀 **Performance** - Improved training/validation workflow with reduced console clutter
+- 📊 **KITTI Metrics** - Streamlined 3D detection evaluation output
+
 ## Features
 
 - **DINO ViT-B Integration**: Self-supervised Vision Transformer for enhanced feature extraction
