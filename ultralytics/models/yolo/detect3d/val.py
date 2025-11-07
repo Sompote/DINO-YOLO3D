@@ -208,29 +208,14 @@ class Detection3DValidator(DetectionValidator):
                 # This matches what _inference() returns
                 preds_2d = x_cat
 
-            if self.args.verbose:
-                LOGGER.info(f"DEBUG postprocess: preds is tuple with {len(preds)} elements")
-                LOGGER.info(f"DEBUG postprocess: preds[0] type: {type(preds_2d)}, shape: {preds_2d.shape}")
-                LOGGER.info(f"DEBUG postprocess: extra type: {type(extra)}")
-
             if isinstance(extra, (list, tuple)):
                 # Expect tuple like (features, params_3d)
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG postprocess: extra is tuple with {len(extra)} elements")
-                    if len(extra) > 0:
-                        LOGGER.info(f"DEBUG postprocess: extra[0] shape: {extra[0].shape if isinstance(extra[0], torch.Tensor) else 'N/A'}")
-                    if len(extra) > 1:
-                        LOGGER.info(f"DEBUG postprocess: extra[1] shape: {extra[1].shape if isinstance(extra[1], torch.Tensor) else 'N/A'}")
                 if extra and isinstance(extra[-1], torch.Tensor):
                     preds_3d = extra[-1]
             elif isinstance(extra, torch.Tensor):
                 preds_3d = extra
         else:
             preds_2d = preds
-
-        if self.args.verbose:
-            LOGGER.info(f"DEBUG postprocess: Final preds_2d shape: {preds_2d.shape if preds_2d is not None else 'None'}")
-            LOGGER.info(f"DEBUG postprocess: Final preds_3d shape: {preds_3d.shape if preds_3d is not None else 'None'}")
 
         # Extract and append 3D params based on mode
         if preds_3d is not None and isinstance(preds_2d, torch.Tensor):
@@ -243,20 +228,12 @@ class Detection3DValidator(DetectionValidator):
                 # During inference, Detect3D.forward() already concatenated decoded 3D params
                 # So we don't need to do anything - just use preds_2d as is!
                 preds_2d_for_nms = preds_2d
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG postprocess: Using existing decoded 3D params in preds_2d")
-                    LOGGER.info(f"DEBUG postprocess: Shape: {preds_2d_for_nms.shape}")
             else:
                 # No 3D params in preds_2d (training mode)
                 # We need to append raw 3D params
                 preds_2d_for_nms = torch.cat([preds_2d, preds_3d], dim=1)
-                if self.args.verbose:
-                    LOGGER.info(f"DEBUG postprocess: Appending RAW 3D to 2D (training mode)")
-                    LOGGER.info(f"DEBUG postprocess: New shape: {preds_2d_for_nms.shape}")
         else:
             preds_2d_for_nms = preds_2d
-            if self.args.verbose:
-                LOGGER.warning(f"DEBUG postprocess: No 3D params found!")
 
         # Apply NMS while preserving 3D params
         from ultralytics.utils.ops import non_max_suppression
@@ -276,10 +253,6 @@ class Detection3DValidator(DetectionValidator):
             nc=self.nc,  # FIX: Specify number of classes to preserve 3D params
         )
 
-        if self.args.verbose and outputs:
-            LOGGER.info(f"DEBUG postprocess: NMS output shape for batch[0]: {outputs[0].shape if len(outputs) > 0 else 'empty'}")
-            if len(outputs) > 0 and outputs[0].shape[1] > 6:
-                LOGGER.info(f"DEBUG postprocess: NMS output has {outputs[0].shape[1]} channels (expected > 6)")
         return outputs
 
     def init_metrics(self, model):
@@ -504,7 +477,6 @@ class Detection3DValidator(DetectionValidator):
 
         # DEBUG: Print first prediction to check values
         if self.args.verbose and params.shape[0] > 0:
-            LOGGER.info(f"DEBUG: First prediction values:")
             LOGGER.info(f"  loc_x: {loc_x[0].item():.3f}, loc_y: {loc_y[0].item():.3f}, depth: {depth[0].item():.3f}")
             LOGGER.info(f"  dims: {dims[0].detach().cpu().numpy()}")
             LOGGER.info(f"  rot: {rot[0].item():.3f} rad ({math.degrees(rot[0].item()):.1f} deg)")
@@ -514,8 +486,6 @@ class Detection3DValidator(DetectionValidator):
     def update_metrics(self, preds, batch):
         """Update 2D metrics and accumulate KITTI-style 3D statistics."""
         # DEBUG: Check if we're getting called
-        if self.args.verbose:
-            LOGGER.info(f"DEBUG update_metrics: Called with {len(preds)} predictions")
 
         super().update_metrics(preds, batch)
 
@@ -527,26 +497,10 @@ class Detection3DValidator(DetectionValidator):
         gt_occlusion = batch.get("occlusion")
         gt_height = batch.get("bbox_height")
 
-        # Check if 3D ground truth is available (log only for first batch)
-        if len(preds) > 0 and not hasattr(self, '_logged_3d_check'):
-            self._logged_3d_check = True
-            has_3d_gt = gt_dims_all is not None and gt_loc_all is not None and gt_rot_all is not None
-            LOGGER.info(f"DEBUG: 3D GT data available: {has_3d_gt}")
-            if has_3d_gt:
-                LOGGER.info(f"DEBUG: GT dims shape: {gt_dims_all.shape}, GT loc shape: {gt_loc_all.shape}, GT rot shape: {gt_rot_all.shape}")
-                LOGGER.info(f"DEBUG: First pred shape: {preds[0].shape}")
-                if preds[0].shape[1] > 6:
-                    LOGGER.info(f"DEBUG: Pred has 3D params ({preds[0].shape[1] - 6} channels)")
-                else:
-                    LOGGER.warning(f"DEBUG: Pred MISSING 3D params! Only {preds[0].shape[1]} channels (expected > 6)")
-
         for si, pred in enumerate(preds):
             pbatch = self._prepare_batch(si, batch)
             gt_cls = pbatch["cls"]
             gt_bbox = pbatch["bbox"]
-
-            if self.args.verbose and si < 3:  # Only log first few
-                LOGGER.info(f"DEBUG update_metrics: Image {si}, GT objects: {gt_cls.numel()}")
 
             if gt_cls.numel() == 0:
                 # Still record false positives for KITTI metrics
@@ -610,12 +564,8 @@ class Detection3DValidator(DetectionValidator):
                         pred_depth = params_3d[:, 2:3]
                         pred_dims = params_3d[:, 3:6]
                         pred_rot = params_3d[:, 6:7]
-                        if self.args.verbose:
-                            LOGGER.info(f"DEBUG: Using DECODED 3D params (dim_max={dim_max:.3f})")
                     else:
                         # Raw params - decode them
-                        if self.args.verbose:
-                            LOGGER.info(f"DEBUG: Decoding RAW 3D params (dim_max={dim_max:.3f})")
 
                         # Decode using same logic as Detect3D.forward()
                         pred_loc_x = (torch.sigmoid(params_3d[:, 0:1]) - 0.5) * 100.0
@@ -627,7 +577,6 @@ class Detection3DValidator(DetectionValidator):
                         pred_rot = (torch.sigmoid(params_3d[:, 6:7]) - 0.5) * 2 * math.pi
 
                     if self.args.verbose:
-                        LOGGER.info(f"DEBUG: 3D values:")
                         LOGGER.info(f"  loc_x: {pred_loc_x[0].item():.3f}, loc_y: {pred_loc_y[0].item():.3f}, depth: {pred_depth[0].item():.3f}")
                         LOGGER.info(f"  dims: {pred_dims[0].detach().cpu().numpy()}")
                         LOGGER.info(f"  rot: {pred_rot[0].item():.3f} rad ({math.degrees(pred_rot[0].item()):.1f} deg)")
@@ -669,7 +618,6 @@ class Detection3DValidator(DetectionValidator):
             if self.args.verbose and ious.numel() > 0:
                 max_iou = torch.max(ious).item()
                 mean_iou = torch.mean(ious).item()
-                LOGGER.info(f"DEBUG: IoU stats - max: {max_iou:.4f}, mean: {mean_iou:.4f}, shape: {ious.shape}")
                 # Find a matching prediction
                 best_pred_iou = -1
                 best_gt_iou = -1
@@ -678,8 +626,6 @@ class Detection3DValidator(DetectionValidator):
                         if ious[p_idx, g_idx] > best_pred_iou:
                             best_pred_iou = ious[p_idx, g_idx].item()
                             best_gt_iou = g_idx
-                LOGGER.info(f"DEBUG: Best IoU: {best_pred_iou:.4f} (pred {0} vs gt {best_gt_iou})")
-                LOGGER.info(f"DEBUG: Using 3D IoU: {iou_3d is not None}")
 
             order = torch.argsort(confidences, descending=True)
 
@@ -740,9 +686,7 @@ class Detection3DValidator(DetectionValidator):
         if self.args.verbose:
             total_conf = sum(len(self.kitti_stats['moderate'][cls_id]['conf']) for cls_id in range(self.nc))
             total_tp = sum(sum(self.kitti_stats['moderate'][cls_id]['tp']) for cls_id in range(self.nc))
-            LOGGER.info(f"DEBUG update_metrics: Total detections recorded: {total_conf}, TPs: {total_tp}")
             total_gt = sum(self.kitti_gt_counts['moderate'])
-            LOGGER.info(f"DEBUG update_metrics: Total GT objects (moderate): {total_gt}")
 
     def get_stats(self):
         """Returns metrics statistics and results dictionary."""
@@ -751,16 +695,12 @@ class Detection3DValidator(DetectionValidator):
         # DEBUG: Check if we have KITTI data
         if not hasattr(self, '_logged_stats_check'):
             self._logged_stats_check = True
-            LOGGER.info(f"DEBUG get_stats: kitti_stats exists: {self.kitti_stats is not None}")
             if self.kitti_stats:
                 for mode_name in self.kitti_stats.keys():
-                    LOGGER.info(f"DEBUG get_stats: mode {mode_name} has {len(self.kitti_stats[mode_name]['moderate'])} classes")
                     # Check if we have any detections or GT counts
                     for diff in self.difficulties:
                         total_gt = sum(self.kitti_gt_counts[mode_name][diff])
                         total_detections = sum(len(self.kitti_stats[mode_name][diff][cls_id]["conf"]) for cls_id in range(self.nc))
-                        LOGGER.info(f"DEBUG get_stats: {mode_name}/{diff} - GT: {total_gt}, Detections: {total_detections}")
-            LOGGER.info(f"DEBUG get_stats: kitti_gt_counts exists: {self.kitti_gt_counts is not None}")
 
         # Compute KITTI mAP for each mode (default, kmap50, kmap70, etc.)
         self.kitti_summary = {mode: {diff: {} for diff in self.difficulties} for mode in self.kmap_modes.keys()}
