@@ -1081,6 +1081,10 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [c1, c2, *args[1:]]
         elif m is CBFuse:
             c2 = ch[f[-1]]
+        elif m is DINO3Backbone:
+            # DINO3Backbone(model_name, freeze_backbone, output_channels, input_channels=None)
+            # args = [model_name, freeze_backbone, output_channels]
+            c2 = args[2] if len(args) > 2 else ch[f]  # output_channels from args or fallback
         else:
             c2 = ch[f]
 
