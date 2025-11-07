@@ -1399,13 +1399,14 @@ class DINO3Backbone(nn.Module):
     """
 
     def __init__(self, model_name='dinov3_vitb16', freeze_backbone=True,
-                 output_channels=512, input_channels=None):
+                 output_channels=512, input_channels=None, dino_version='3'):
         super().__init__()
 
         self.model_name = model_name
         self.freeze_backbone = freeze_backbone
         self.input_channels = input_channels
         self.output_channels = output_channels
+        self.dino_version = str(dino_version)  # '2' or '3'
 
         # DINOv3 model specifications based on official Facebook Research repository
         # Reference: https://github.com/facebookresearch/dinov3
@@ -1474,170 +1475,163 @@ class DINO3Backbone(nn.Module):
         self.spatial_projection = None
 
     def _load_dinov3_model(self, model_name):
-        """
-        Load DINOv3 model with support for multiple loading strategies.
+        """Load DINOv3 model using Hugging Face transformers."""
+        import os
+        from transformers import AutoModel, AutoConfig
 
-        This method attempts to load DINOv3 models in the following order:
-        1. Official DINOv3 models via PyTorch Hub (when available)
-        2. Hugging Face Transformers (for compatible models)
-        3. DINOv2 as compatible fallback
-        4. Random initialization as last resort
+        spec = self.dinov3_specs.get(model_name, self.dinov3_specs['dinov3_vitb16'])
 
-        Args:
-            model_name (str): DINOv3 model variant name
+        print(f"🔄 Loading DINOv{self.dino_version} model via Hugging Face transformers: {model_name}")
 
-        Returns:
-            Loaded DINO model instance
-        """
-        spec = self.dinov3_specs[model_name]
+        # Hugging Face model mapping
+        if self.dino_version == '3':
+            hf_model_mapping = {
+                'dinov3_vits16': 'facebook/dinov3-vits16-pretrain-lvd1689m',
+                'dinov3_vitb16': 'facebook/dinov3-vitb16-pretrain-lvd1689m',
+                'dinov3_vitl16': 'facebook/dinov3-vitl16-pretrain-lvd1689m',
+                'dinov3_vith16_plus': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
+                'dinov3_vit7b16': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
+            }
+            default_model = 'facebook/dinov3-vitb16-pretrain-lvd1689m'
+        else:
+            hf_model_mapping = {
+                'dinov3_vits16': 'facebook/dinov2-small',
+                'dinov3_vitb16': 'facebook/dinov2-base',
+                'dinov3_vitl16': 'facebook/dinov2-large',
+                'dinov3_vith16_plus': 'facebook/dinov2-giant',
+                'dinov3_vit7b16': 'facebook/dinov2-giant',
+            }
+            default_model = 'facebook/dinov2-base'
 
-        # Strategy 1: Try to load official DINOv3 from PyTorch Hub
+        hf_model_id = hf_model_mapping.get(model_name, default_model)
+        print(f"   Loading from Hugging Face: {hf_model_id}")
+
         try:
-            import torch
-            print(f"🔄 Attempting to load official DINOv3 model from PyTorch Hub: {model_name}")
+            # Get token if available
+            hf_token = os.getenv('HUGGINGFACE_HUB_TOKEN')
+            token_kwargs = {'token': hf_token} if hf_token else {}
 
-            for variant_name in [model_name, model_name.replace('dinov3_', '')]:
-                try:
-                    model = torch.hub.load('facebookresearch/dinov3', variant_name, source='github', pretrained=True)
-                    print(f"✅ Successfully loaded official DINOv3 model: {variant_name}")
-                    return model
-                except:
-                    continue
-
-        except Exception as e:
-            print(f"ℹ️  Official DINOv3 not available via PyTorch Hub: {e}")
-
-        # Strategy 2: Try to load from Hugging Face with official DINOv3 naming
-        try:
-            from transformers import AutoModel
-            variant_clean = model_name.replace('dinov3_', '')
-            hf_names = [
-                f"facebook/dinov3-{variant_clean}-pretrain-lvd1689m",
-                f"facebook/dinov3-{variant_clean}",
-                f"facebook/{model_name}",
-                f"facebookresearch/dinov3-{variant_clean}"
-            ]
-
-            for hf_model_name in hf_names:
-                try:
-                    print(f"🔄 Attempting to load DINOv3 from Hugging Face: {hf_model_name}")
-                    model = AutoModel.from_pretrained(hf_model_name)
-                    print(f"✅ Successfully loaded DINOv3 from Hugging Face: {hf_model_name}")
-                    return model
-                except:
-                    continue
-
-        except Exception as e:
-            print(f"ℹ️  DINOv3 not available via Hugging Face: {e}")
-
-        # Strategy 3: Use DINOv2 as compatible fallback based on embedding dimensions
-        try:
-            print(f"🔄 Using DINOv2 as compatible fallback for DINOv3 specs")
-
-            # Map DINOv3 specs to appropriate DINOv2 model
-            embed_dim = spec['embed_dim']
-            if embed_dim <= 384:
-                dino2_model = 'facebook/dinov2-small'
-            elif embed_dim <= 768:
-                dino2_model = 'facebook/dinov2-base'
-            elif embed_dim <= 1024:
-                dino2_model = 'facebook/dinov2-large'
+            if hf_token:
+                print(f"   Using HUGGINGFACE_HUB_TOKEN: {hf_token[:7]}...")
             else:
-                dino2_model = 'facebook/dinov2-giant'
+                print("   No HUGGINGFACE_HUB_TOKEN found, using default authentication")
 
-            model = Dinov2Model.from_pretrained(dino2_model)
-            print(f"✅ Successfully loaded DINOv2 fallback: {dino2_model} (for DINOv3 {model_name})")
-            print(f"   Embedding dim mapping: {embed_dim} -> {model.config.hidden_size}")
+            # Load config and model
+            config = AutoConfig.from_pretrained(hf_model_id, **token_kwargs)
+
+            # Set config options
+            if not hasattr(config, 'output_attentions'):
+                config.output_attentions = False
+            if not hasattr(config, 'output_hidden_states'):
+                config.output_hidden_states = False
+            if not hasattr(config, 'return_dict'):
+                config.return_dict = True
+
+            model = AutoModel.from_pretrained(hf_model_id, config=config, **token_kwargs)
+            print(f"✅ Successfully loaded model from Hugging Face: {hf_model_id}")
+
+            # Detect embedding dimension
+            if hasattr(model, 'config') and hasattr(model.config, 'hidden_size'):
+                actual_embed_dim = model.config.hidden_size
+                print(f"   Detected embed_dim from config: {actual_embed_dim}")
+            elif hasattr(model, 'embed_dim'):
+                actual_embed_dim = model.embed_dim
+                print(f"   Detected embed_dim from model: {actual_embed_dim}")
+            else:
+                actual_embed_dim = spec['embed_dim']
+                print(f"   Using spec embed_dim: {actual_embed_dim}")
+
+            self.embed_dim = actual_embed_dim
+            print(f"   Projection layers will be created dynamically based on input shape")
+
             return model
 
-        except Exception as e:
-            print(f"❌ Failed to load DINOv2 fallback: {e}")
-
-        # Strategy 4: Random initialization as last resort
-        try:
-            print(f"🔄 Creating randomly initialized model matching DINOv3 specifications")
-            config = Dinov2Config()
-            config.hidden_size = spec['embed_dim']
-            config.patch_size = spec['patch_size']
-            config.num_attention_heads = max(8, spec['embed_dim'] // 64)
-            config.num_hidden_layers = min(24, max(12, spec['params'] // 10))
-
-            model = Dinov2Model(config)
-            print(f"✅ Created random DINOv3 model with {spec['params']}M parameter specification")
-            print(f"   Embedding dim: {config.hidden_size}, Patch size: {config.patch_size}")
-            print(f"   Attention heads: {config.num_attention_heads}, Layers: {config.num_hidden_layers}")
-            return model
-
-        except Exception as e:
-            print(f"❌ Failed to create random model: {e}")
-            raise RuntimeError(f"Could not initialize DINOv3 model {model_name} with any strategy")
+        except Exception as hf_error:
+            print(f"❌ Hugging Face loading failed: {hf_error}")
+            raise RuntimeError(f"Failed to load DINOv{self.dino_version} model '{model_name}' from Hugging Face. "
+                             f"Error: {hf_error}. Please check your internet connection and try again.")
 
     def extract_features(self, features, input_size):
         """Extract features from DINOv3 patch features maintaining spatial dimensions."""
-        # Handle different feature tensor shapes
-        if len(features.shape) == 3:
-            B, N_total, D = features.shape
-        elif len(features.shape) == 4:
-            # If already spatial (B, D, H, W), apply adapters and return
-            B, D, H_feat, W_feat = features.shape
-            # Permute to (B, H, W, D) for linear layer
-            adapted = features.permute(0, 2, 3, 1)
-            adapted = self.feature_adapter(adapted)
-            adapted = adapted.permute(0, 3, 1, 2)
-            return self.spatial_projection(adapted)
-        elif len(features.shape) == 2:
-            # Single vector (B, D) - expand to spatial
-            B, D = features.shape
-            H, W = input_size
-            patch_h = patch_w = H // self.patch_size
-            # Create spatial grid
-            features = features.unsqueeze(1).expand(B, patch_h * patch_w, D)
-            N_total = patch_h * patch_w
-        else:
-            raise ValueError(f"Unexpected feature shape: {features.shape}")
+        # Handle 2D features (add batch dimension)
+        if len(features.shape) == 2:
+            features = features.unsqueeze(0)
 
+        # Handle 4D features (already spatial)
+        elif len(features.shape) == 4:
+            B, D, H, W = features.shape
+            # Ensure minimum size for 3x3 conv with padding
+            if H < 3 or W < 3:
+                min_size = max(3, H, W)
+                features = F.interpolate(features, size=(min_size, min_size), mode='bilinear', align_corners=False)
+
+            # Apply adapters
+            features_2d = features
+            adapted_features = features_2d.permute(0, 2, 3, 1)
+            adapted_features = self.feature_adapter(adapted_features)
+            adapted_features = adapted_features.permute(0, 3, 1, 2)
+            adapted_features = self.spatial_projection(adapted_features)
+            return adapted_features
+
+        # Handle 3D features (patch tokens)
+        B, N_total, D = features.shape
         H, W = input_size
 
-        # Remove CLS token and keep patch tokens (if present)
-        # Check if this looks like it has a CLS token (first dimension larger than expected patches)
-        expected_patches = (H // self.patch_size) * (W // self.patch_size)
-
-        if N_total == expected_patches + 1:
-            # Has CLS token, remove it
-            patch_features = features[:, 1:, :]
-        elif N_total == expected_patches:
-            # No CLS token
-            patch_features = features
-        else:
-            # Unexpected number of tokens, try to adapt
-            print(f"Warning: Unexpected number of tokens: {N_total}, expected: {expected_patches} or {expected_patches + 1}")
-            # Take up to expected_patches tokens
-            patch_features = features[:, :expected_patches, :] if N_total > expected_patches else features
-
+        # Remove CLS token (first token)
+        patch_features = features[:, 1:, :]
         N_patches = patch_features.shape[1]
 
         # Calculate patch grid dimensions
         patch_h = int(N_patches**0.5)
         patch_w = patch_h
 
-        # Ensure correct number of patches
+        # Handle non-square patch grids
         if patch_h * patch_w != N_patches:
-            patch_h = patch_w = int(N_patches**0.5)
-            if patch_h * patch_w > N_patches:
-                patch_h = patch_w = patch_h - 1
-            if patch_h * patch_w < N_patches:
-                # Truncate to fit
-                patch_features = patch_features[:, :patch_h*patch_w, :]
-            N_patches = patch_h * patch_w
+            # Try to find factors
+            for h in range(patch_h, 0, -1):
+                if N_patches % h == 0:
+                    patch_h = h
+                    patch_w = N_patches // h
+                    break
+            else:
+                # Fallback: use square and pad/truncate
+                patch_h = patch_w = int(N_patches**0.5)
+                if patch_h * patch_w < N_patches:
+                    patch_h += 1
+                    patch_w = patch_h
 
-        # Reshape to spatial feature map
+        # Ensure minimum spatial dimensions
+        min_dim = 4
+        if patch_h < min_dim or patch_w < min_dim:
+            aspect_ratio = patch_w / patch_h if patch_h > 0 else 1
+            if aspect_ratio >= 1:
+                patch_h = min_dim
+                patch_w = max(min_dim, int(patch_h * aspect_ratio))
+            else:
+                patch_w = min_dim
+                patch_h = max(min_dim, int(patch_w / aspect_ratio))
+
+        # Adjust patches to match target dimensions
+        target_patches = patch_h * patch_w
+        if target_patches != N_patches:
+            if target_patches < N_patches:
+                # Truncate
+                patch_features = patch_features[:, :target_patches, :]
+            else:
+                # Pad with last patch
+                pad_size = target_patches - N_patches
+                if pad_size > 0:
+                    last_patch = patch_features[:, -1:, :].expand(-1, pad_size, -1)
+                    patch_features = torch.cat([patch_features, last_patch], dim=1)
+
+        # Reshape to spatial grid
         features_2d = patch_features.view(B, patch_h, patch_w, D)
-        features_2d = features_2d.permute(0, 3, 1, 2)
+        features_2d = features_2d.permute(0, 3, 1, 2)  # (B, D, H, W)
 
-        # Adapt channel dimensions
-        adapted_features = features_2d.permute(0, 2, 3, 1)
+        # Apply adapters
+        adapted_features = features_2d.permute(0, 2, 3, 1)  # (B, H, W, D)
         adapted_features = self.feature_adapter(adapted_features)
-        adapted_features = adapted_features.permute(0, 3, 1, 2)
+        adapted_features = adapted_features.permute(0, 3, 1, 2)  # (B, D, H, W)
 
         # Apply spatial projection
         adapted_features = self.spatial_projection(adapted_features)
@@ -1693,6 +1687,12 @@ class DINO3Backbone(nn.Module):
         if self.input_projection is None:
             self.input_channels = C
             self._create_projection_layers(C)
+            # Move projection layers to same device as input
+            if x.is_cuda:
+                self.input_projection = self.input_projection.cuda()
+                self.fusion_layer = self.fusion_layer.cuda()
+                self.feature_adapter = self.feature_adapter.cuda()
+                self.spatial_projection = self.spatial_projection.cuda()
 
         # Project CNN features to RGB-like representation
         pseudo_rgb = self.input_projection(x)
@@ -1706,38 +1706,17 @@ class DINO3Backbone(nn.Module):
         with torch.set_grad_enabled(not self.freeze_backbone):
             outputs = self.dino_model(pseudo_rgb_resized)
 
-            # Debug: Check output type and structure
-            # print(f"DEBUG: DINO output type: {type(outputs)}")
-            # print(f"DEBUG: DINO output dir: {dir(outputs) if hasattr(outputs, '__dir__') else 'N/A'}")
-
             # Handle different output formats
             if hasattr(outputs, 'last_hidden_state'):
                 features = outputs.last_hidden_state
-            elif isinstance(outputs, dict):
-                if 'last_hidden_state' in outputs:
-                    features = outputs['last_hidden_state']
-                elif 'x_norm_patchtokens' in outputs:
-                    features = outputs['x_norm_patchtokens']
-                elif 'x_norm_clstoken' in outputs:
-                    # If only CLS token, we need to handle differently
-                    features = outputs.get('x_norm_patchtokens', outputs['x_norm_clstoken'])
-                else:
-                    # Try to get first available tensor
-                    features = next((v for v in outputs.values() if torch.is_tensor(v)), None)
-                    if features is None:
-                        raise ValueError(f"Could not find valid features in dict output: {outputs.keys()}")
-            elif isinstance(outputs, (tuple, list)):
-                if len(outputs) > 0:
-                    features = outputs[0]
-                else:
-                    raise ValueError("Empty tuple/list output from DINO model")
-            else:
-                # Direct tensor output
+            elif isinstance(outputs, torch.Tensor):
                 features = outputs
-
-            # Validate features shape
-            if features is None or not torch.is_tensor(features):
-                raise ValueError(f"Invalid features extracted from DINO: type={type(features)}")
+            elif isinstance(outputs, (list, tuple)):
+                features = outputs[0]
+            elif hasattr(outputs, 'hidden_states'):
+                features = outputs.hidden_states[-1]
+            else:
+                raise ValueError(f"Unsupported DINOv3 output format: {type(outputs)}")
 
         # Extract features maintaining spatial structure
         dino_features = self.extract_features(features, (dino_size, dino_size))
