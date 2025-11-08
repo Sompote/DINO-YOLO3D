@@ -1783,7 +1783,14 @@ class DINO3Backbone(nn.Module):
                 features = outputs
             elif isinstance(outputs, (list, tuple)):
                 if len(outputs) > 0:
+                    # Get first element
                     features = outputs[0]
+                    # If it's still a list/tuple, flatten it
+                    while isinstance(features, (list, tuple)) and len(features) > 0:
+                        features = features[0]
+                    # Ensure we have a tensor
+                    if not isinstance(features, torch.Tensor):
+                        raise TypeError(f"Could not extract tensor from DINOv3 list/tuple output. Got: {type(features)}")
                 else:
                     raise ValueError(f"DINOv3 returned empty list/tuple: {outputs}")
             elif hasattr(outputs, 'hidden_states'):
@@ -1792,7 +1799,15 @@ class DINO3Backbone(nn.Module):
                 raise ValueError(f"Unsupported DINOv3 output format: {type(outputs)}")
 
         # Extract features maintaining spatial structure
-        dino_features = self.extract_features(features, (dino_size, dino_size))
+            # Ensure features is a tensor, not a list/tuple
+            if isinstance(features, (list, tuple)):
+                # Flatten nested list/tuple to get the actual tensor
+                while isinstance(features, (list, tuple)) and len(features) > 0:
+                    features = features[0]
+                if not isinstance(features, torch.Tensor):
+                    raise TypeError(f"Could not extract tensor from DINOv3 output. Final type: {type(features)}")
+
+            dino_features = self.extract_features(features, (dino_size, dino_size))
 
         # Resize back to original spatial size
         dino_features_resized = F.interpolate(dino_features, size=(H, W),
