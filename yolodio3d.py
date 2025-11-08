@@ -34,6 +34,7 @@ if str(SCRIPT_DIR) not in sys.path:
 try:
     from ultralytics import YOLO
     from ultralytics.utils import LOGGER
+    from ultralytics.nn.modules.block import DINO3Backbone
 except ImportError as e:
     print("Error: ultralytics package not found or failed to import.")
     print(f"Details: {e}")
@@ -154,6 +155,30 @@ def get_model_config(yolo_size, use_dino=True, dino_integration="dual"):
     return model_path
 
 
+def set_dino_freeze(model, freeze=True):
+    """
+    Toggle gradient computation for DINO3Backbone modules only.
+
+    Args:
+        model (YOLO): Instantiated YOLO model.
+        freeze (bool): True to freeze DINO, False to unfreeze.
+    """
+    if not hasattr(model, "model"):
+        return
+
+    dino_layers = [m for m in model.model.modules() if isinstance(m, DINO3Backbone)]
+    if not dino_layers:
+        return
+
+    action = "Freezing" if freeze else "Unfreezing"
+    print_info(f"{action} {len(dino_layers)} DINO backbone layer(s) only")
+
+    for layer in dino_layers:
+        layer.freeze_backbone = freeze
+        for param in layer.parameters():
+            param.requires_grad = not freeze
+
+
 def cmd_train(args):
     """Train YOLOv12-3D-DINO model."""
     print_banner()
@@ -208,8 +233,8 @@ def cmd_train(args):
     # Validation data percentage
     val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
     print_info(f"Validation data: {val_info}")
-    if args.freeze_dino:
-        print_info("DINOv3 backbone: FROZEN (recommended for faster training)")
+    if args.freeze_dino and args.use_dino:
+        print_info("DINOv3 backbone: FROZEN (only DINO layers are frozen)")
 
     # Build training arguments
     train_args = {
@@ -227,17 +252,14 @@ def cmd_train(args):
         'valpercent': args.valpercent,
     }
 
-    # Add DINO-specific args
-    if args.use_dino and args.freeze_dino:
-        train_args['freeze'] = 10  # Freeze first 10 layers including DINO
-        print_info("Freezing backbone layers for faster training")
-
     print_section("Starting Training")
     print_banner()
 
     # Load model and start training
     try:
         model = YOLO(str(model_config))
+        if args.use_dino:
+            set_dino_freeze(model, args.freeze_dino)
         model.train(**train_args)
         print_success("Training completed successfully!")
     except Exception as e:
