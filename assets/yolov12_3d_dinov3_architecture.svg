@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1400" height="900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="gradInput" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4A90E2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#357ABD;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradDINO" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E94B3C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C0392B;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradBackbone" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2ECC71;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#27AE60;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradHead" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#F39C12;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E67E22;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradOutput" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#9B59B6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8E44AD;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Arrow marker -->
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+    
+    <!-- Box shadow filter -->
+    <filter id="dropshadow" height="130%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+      <feOffset dx="2" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.3"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1400" height="900" fill="#F8F9FA"/>
+  
+  <!-- Title -->
+  <text x="700" y="40" font-family="Arial" font-size="28" font-weight="bold" fill="#2C3E50" text-anchor="middle">
+    YOLOv12-3D with DINOv3 (Self-supervised Vision Transformer) Architecture
+  </text>
+  
+  <!-- Input Image -->
+  <rect x="50" y="100" width="200" height="150" rx="10" fill="url(#gradInput)" filter="url(#dropshadow)"/>
+  <text x="150" y="140" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">INPUT</text>
+  <text x="150" y="165" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Image: 640x640</text>
+  <text x="150" y="185" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Channels: 3 (RGB)</text>
+  <text x="150" y="205" font-family="Arial" font-size="12" fill="white" text-anchor="middle">Batch: N</text>
+  
+  <!-- Arrow 1 -->
+  <line x1="250" y1="175" x2="320" y2="175" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- First Convolution -->
+  <rect x="320" y="140" width="150" height="70" rx="8" fill="#34495E" filter="url(#dropshadow)"/>
+  <text x="395" y="165" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">Conv</text>
+  <text x="395" y="185" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[64, 3×3, stride=2]</text>
+  <text x="395" y="200" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P0/2 (320×320×64)</text>
+  
+  <!-- Arrow 2 -->
+  <line x1="470" y1="175" x2="560" y2="175" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- DINOv3 at P0 (Early Stage) -->
+  <rect x="560" y="100" width="240" height="150" rx="10" fill="url(#gradDINO)" filter="url(#dropshadow)"/>
+  <text x="680" y="130" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">DINOv3 Backbone (P0)</text>
+  <text x="680" y="155" font-family="Arial" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Self-supervised ViT</text>
+  <text x="680" y="175" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Model: dinov3_vitb16</text>
+  <text x="680" y="193" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Embedding: 768-dim</text>
+  <text x="680" y="211" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Frozen by default</text>
+  <text x="680" y="229" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Output: 64 channels</text>
+  
+  <!-- Arrow 3 -->
+  <line x1="680" y1="250" x2="680" y2="280" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Second Convolution -->
+  <rect x="590" y="280" width="180" height="70" rx="8" fill="#34495E" filter="url(#dropshadow)"/>
+  <text x="680" y="305" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">Conv</text>
+  <text x="680" y="325" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[128, 3×3, stride=2]</text>
+  <text x="680" y="340" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P1/4 (160×160×128)</text>
+  
+  <!-- Arrow 4 -->
+  <line x1="680" y1="350" x2="680" y2="380" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- C3k2 Block -->
+  <rect x="590" y="380" width="180" height="70" rx="8" fill="#34495E" filter="url(#dropshadow)"/>
+  <text x="680" y="405" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">C3k2</text>
+  <text x="680" y="425" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[256, n=2, e=0.25]</text>
+  <text x="680" y="440" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P2/8 (80×80×256)</text>
+  
+  <!-- Arrow 5 -->
+  <line x1="680" y1="450" x2="680" y2="480" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Third Convolution -->
+  <rect x="590" y="480" width="180" height="70" rx="8" fill="#34495E" filter="url(#dropshadow)"/>
+  <text x="680" y="505" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">Conv</text>
+  <text x="680" y="525" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[256, 3×3, stride=2]</text>
+  <text x="680" y="540" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P3/8 (40×40×256)</text>
+  
+  <!-- DINOv3 at P3 (Mid-level Stage) - Optional -->
+  <rect x="880" y="450" width="240" height="150" rx="10" fill="url(#gradDINO)" filter="url(#dropshadow)"/>
+  <text x="1000" y="480" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">DINOv3 Backbone (P3)</text>
+  <text x="1000" y="505" font-family="Arial" font-size="12" font-weight="bold" fill="white" text-anchor="middle">Self-supervised ViT</text>
+  <text x="1000" y="525" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Model: dinov3_vitb16</text>
+  <text x="1000" y="543" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Embedding: 768-dim</text>
+  <text x="1000" y="561" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Frozen by default</text>
+  <text x="1000" y="579" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Output: 256 channels</text>
+  
+  <!-- Arrow from P3 to DINOv3 -->
+  <line x1="770" y1="515" x2="880" y2="515" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  <text x="825" y="510" font-family="Arial" font-size="10" fill="#C0392B" text-anchor="middle" font-weight="bold">P3 Features → DINOv3</text>
+  
+  <!-- Arrow back from DINOv3 -->
+  <line x1="1000" y1="600" x2="1000" y2="630" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  <line x1="1000" y1="630" x2="770" y2="630" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="770" y1="630" x2="770" y2="610" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  <text x="885" y="625" font-family="Arial" font-size="10" fill="#C0392B" text-anchor="middle" font-weight="bold">← Enhanced P3</text>
+  
+  <!-- C3k2 Block 2 -->
+  <rect x="590" y="630" width="180" height="70" rx="8" fill="url(#gradBackbone)" filter="url(#dropshadow)"/>
+  <text x="680" y="655" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">C3k2</text>
+  <text x="680" y="675" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[512, n=2, e=0.25]</text>
+  <text x="680" y="690" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P4/16 (20×20×512)</text>
+  
+  <!-- Arrow 6 -->
+  <line x1="680" y1="700" x2="680" y2="730" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- A2C2f Block -->
+  <rect x="590" y="730" width="180" height="70" rx="8" fill="url(#gradBackbone)" filter="url(#dropshadow)"/>
+  <text x="680" y="755" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">A2C2f</text>
+  <text x="680" y="775" font-family="Arial" font-size="11" fill="white" text-anchor="middle">[512, n=4, a2=True]</text>
+  <text x="680" y="790" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P4/16 (20×20×512)</text>
+  
+  <!-- Arrow 7 -->
+  <line x1="680" y1="800" x2="680" y2="830" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Final Convolution -->
+  <rect x="590" y="830" width="180" height="50" rx="8" fill="#34495E" filter="url(#dropshadow)"/>
+  <text x="680" y="850" font-family="Arial" font-size="13" font-weight="bold" fill="white" text-anchor="middle">Conv [1024, 3×3]</text>
+  <text x="680" y="868" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P5/32 (10×10×1024)</text>
+  
+  <!-- Arrow to Neck -->
+  <line x1="770" y1="855" x2="860" y2="855" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Neck / Head -->
+  <rect x="860" y="800" width="300" height="120" rx="10" fill="url(#gradHead)" filter="url(#dropshadow)"/>
+  <text x="1010" y="830" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">YOLOv12-3D Head</text>
+  <text x="1010" y="850" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• Upsampling + Concat (P3, P4, P5)</text>
+  <text x="1010" y="868" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• A2C2f layers for feature fusion</text>
+  <text x="1010" y="886" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• Detect3D head for 3D detection</text>
+  
+  <!-- Arrow to Output -->
+  <line x1="1160" y1="860" x2="1250" y2="860" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Output -->
+  <rect x="1250" y="800" width="120" height="120" rx="10" fill="url(#gradOutput)" filter="url(#dropshadow)"/>
+  <text x="1310" y="830" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">OUTPUT</text>
+  <text x="1310" y="850" font-family="Arial" font-size="11" fill="white" text-anchor="middle">3D Detections:</text>
+  <text x="1310" y="868" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• Bounding boxes (2D)</text>
+  <text x="1310" y="886" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• Depth (Z)</text>
+  <text x="1310" y="904" font-family="Arial" font-size="11" fill="white" text-anchor="middle">• Dimensions (W, H, L)</text>
+  
+  <!-- Legend -->
+  <text x="50" y="780" font-family="Arial" font-size="16" font-weight="bold" fill="#2C3E50">Legend:</text>
+  
+  <rect x="50" y="800" width="30" height="20" rx="3" fill="url(#gradDINO)"/>
+  <text x="90" y="815" font-family="Arial" font-size="12" fill="#2C3E50">DINOv3 (Self-supervised Vision Transformer)</text>
+  
+  <rect x="50" y="830" width="30" height="20" rx="3" fill="#34495E"/>
+  <text x="90" y="845" font-family="Arial" font-size="12" fill="#2C3E50">Standard Convolution Layers</text>
+  
+  <rect x="50" y="860" width="30" height="20" rx="3" fill="url(#gradBackbone)"/>
+  <text x="90" y="875" font-family="Arial" font-size="12" fill="#2C3E50">Enhanced Backbone (A2C2f, C3k2)</text>
+  
+  <line x1="750" y1="870" x2="790" y2="870" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  <text x="800" y="875" font-family="Arial" font-size="12" fill="#2C3E50">DINOv3 Processing (Optional at P3)</text>
+  
+  <!-- Feature Map Dimensions -->
+  <text x="320" y="100" font-family="Arial" font-size="11" fill="#7F8C8D" text-anchor="middle">Feature Map Sizes:</text>
+  <text x="320" y="115" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="middle">640×640 → 320×320 → 160×160</text>
+  <text x="320" y="128" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="middle">→ 80×80 → 40×40 → 20×20 → 10×10</text>
+  
+  <!-- Integration Modes -->
+  <rect x="50" y="550" width="480" height="200" rx="10" fill="#ECF0F1" stroke="#BDC3C7" stroke-width="2" filter="url(#dropshadow)"/>
+  <text x="290" y="575" font-family="Arial" font-size="15" font-weight="bold" fill="#2C3E50" text-anchor="middle">DINOv3 Integration Modes</text>
+  
+  <text x="70" y="605" font-family="Arial" font-size="13" font-weight="bold" fill="#27AE60" text-anchor="start">Mode 1: Single P0 (Lightweight)</text>
+  <text x="90" y="625" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• DINOv3 at P0 only (early stage)</text>
+  <text x="90" y="640" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Memory: ~3-4GB GPU</text>
+  <text x="90" y="655" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Speed: Faster training/inference</text>
+  <text x="90" y="670" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Best for: Limited resources</text>
+  
+  <text x="270" y="605" font-family="Arial" font-size="13" font-weight="bold" fill="#E74C3C" text-anchor="start">Mode 2: Dual P0+P3 (Maximum Performance)</text>
+  <text x="290" y="625" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• DINOv3 at P0 and P3</text>
+  <text x="290" y="640" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Memory: ~4-6GB GPU</text>
+  <text x="290" y="655" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Accuracy: Best performance</text>
+  <text x="290" y="670" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">• Best for: Production use</text>
+  
+  <!-- Key Features -->
+  <rect x="50" y="320" width="480" height="210" rx="10" fill="#FFF9E6" stroke="#F39C12" stroke-width="2" filter="url(#dropshadow)"/>
+  <text x="290" y="345" font-family="Arial" font-size="15" font-weight="bold" fill="#E67E22" text-anchor="middle">DINOv3 Key Features</text>
+  
+  <text x="70" y="375" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Self-supervised Learning</text>
+  <text x="90" y="392" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Learns from millions of unlabeled images</text>
+  
+  <text x="70" y="415" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Transfer Learning</text>
+  <text x="90" y="432" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Superior feature transfer to KITTI domain</text>
+  
+  <text x="70" y="455" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Regularization</text>
+  <text x="90" y="472" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Prevents overfitting with pre-trained features</text>
+  
+  <text x="270" y="375" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Better Initialization</text>
+  <text x="290" y="392" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Excellent starting point vs random weights</text>
+  
+  <text x="270" y="415" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Frozen Backbone</text>
+  <text x="290" y="432" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Faster training, reduced memory usage</text>
+  
+  <text x="270" y="455" font-family="Arial" font-size="11" fill="#34495E" text-anchor="start">✓ Hugging Face Models</text>
+  <text x="290" y="472" font-family="Arial" font-size="10" fill="#7F8C8D" text-anchor="start">Pre-trained weights from facebook/dinov3-*</text>
+</svg>

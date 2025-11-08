@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="500" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gradDINO" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#E94B3C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#C0392B;stop-opacity:1" />
+    </linearGradient>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#333" />
+    </marker>
+  </defs>
+  
+  <rect width="1200" height="500" fill="#F8F9FA"/>
+  
+  <!-- Title -->
+  <text x="600" y="40" font-family="Arial" font-size="24" font-weight="bold" fill="#2C3E50" text-anchor="middle">
+    YOLOv12-3D + DINOv3 Data Flow
+  </text>
+  
+  <!-- Stage 1: Input -->
+  <rect x="50" y="180" width="150" height="100" rx="10" fill="#4A90E2" filter="url(#dropshadow)"/>
+  <text x="125" y="215" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">INPUT</text>
+  <text x="125" y="240" font-family="Arial" font-size="11" fill="white" text-anchor="middle">640×640×3</text>
+  <text x="125" y="255" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Image</text>
+  
+  <line x1="200" y1="230" x2="270" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Stage 2: Initial Conv -->
+  <rect x="270" y="180" width="150" height="100" rx="10" fill="#34495E"/>
+  <text x="345" y="215" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">Conv</text>
+  <text x="345" y="240" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">320×320×64</text>
+  
+  <line x1="420" y1="230" x2="490" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Stage 3: DINOv3 P0 -->
+  <rect x="490" y="150" width="180" height="160" rx="10" fill="url(#gradDINO)"/>
+  <text x="580" y="180" font-family="Arial" font-size="16" font-weight="bold" fill="white" text-anchor="middle">DINOv3 (P0)</text>
+  <text x="580" y="205" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Self-supervised ViT</text>
+  <text x="580" y="225" font-family="Arial" font-size="11" fill="white" text-anchor="middle">dinov3_vitb16</text>
+  <text x="580" y="245" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Frozen</text>
+  <text x="580" y="265" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Output: 64-ch</text>
+  <text x="580" y="285" font-family="Arial" font-size="10" fill="#FFEBEE" text-anchor="middle">↑ Enhanced Features ↑</text>
+  
+  <line x1="670" y1="230" x2="740" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Stage 4: Backbone -->
+  <rect x="740" y="180" width="150" height="100" rx="10" fill="#2ECC71"/>
+  <text x="815" y="215" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">Backbone</text>
+  <text x="815" y="240" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">C3k2, A2C2f</text>
+  <text x="815" y="255" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">P3, P4, P5</text>
+  
+  <line x1="890" y1="230" x2="960" y2="230" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)"/>
+  
+  <!-- Stage 5: Head -->
+  <rect x="960" y="180" width="150" height="100" rx="10" fill="#F39C12"/>
+  <text x="1035" y="215" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">Detect3D</text>
+  <text x="1035" y="240" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">3D Detection</text>
+  <text x="1035" y="255" font-family="Arial" font-size="11" fill="#BDC3C7" text-anchor="middle">Head</text>
+  
+  <!-- DINOv3 P3 (Optional) -->
+  <rect x="600" y="370" width="200" height="100" rx="10" fill="url(#gradDINO)" opacity="0.85"/>
+  <text x="700" y="400" font-family="Arial" font-size="14" font-weight="bold" fill="white" text-anchor="middle">DINOv3 (P3) - Optional</text>
+  <text x="700" y="420" font-family="Arial" font-size="11" fill="white" text-anchor="middle">Mid-level Enhancement</text>
+  <text x="700" y="440" font-family="Arial" font-size="11" fill="white" text-anchor="middle">For Dual P0+P3 Mode</text>
+  
+  <line x1="815" y1="280" x2="815" y2="330" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  <line x1="815" y1="330" x2="700" y2="330" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5"/>
+  <line x1="700" y1="370" x2="700" y2="330" stroke="#E94B3C" stroke-width="2" stroke-dasharray="5,5" marker-end="url(#arrowhead)"/>
+  
+  <!-- Labels -->
+  <text x="125" y="310" font-family="Arial" font-size="12" fill="#7F8C8D" text-anchor="middle">Raw Image</text>
+  <text x="345" y="310" font-family="Arial" font-size="12" fill="#7F8C8D" text-anchor="middle">Initial Features</text>
+  <text x="580" y="330" font-family="Arial" font-size="12" fill="#C0392B" text-anchor="middle" font-weight="bold">Self-supervised Enhancement</text>
+  <text x="815" y="310" font-family="Arial" font-size="12" fill="#7F8C8D" text-anchor="middle">Multi-scale Features</text>
+  <text x="1035" y="310" font-family="Arial" font-size="12" fill="#7F8C8D" text-anchor="middle">3D Output</text>
+  
+  <!-- Integration Info -->
+  <rect x="50" y="420" width="1100" height="60" rx="8" fill="#ECF0F1" stroke="#BDC3C7" stroke-width="1"/>
+  <text x="600" y="445" font-family="Arial" font-size="13" font-weight="bold" fill="#2C3E50" text-anchor="middle">
+    Integration Modes: Single P0 (Lightweight) | Dual P0+P3 (Maximum Performance)
+  </text>
+  <text x="600" y="465" font-family="Arial" font-size="11" fill="#7F8C8D" text-anchor="middle">
+    DINOv3 provides self-supervised learning, transfer learning, and regularization
+  </text>
+</svg>
