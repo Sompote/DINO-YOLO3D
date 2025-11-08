@@ -156,6 +156,15 @@ python yolodio3d.py train \
     --no-dino \
     --epochs 100
 
+# Reduce validation time by sampling only part of the val split (10% here)
+python yolodio3d.py train \
+    --data /workspace/DINO-YOLO3D/kitti-3d.yaml \
+    --yolo-size m \
+    --dino-integration single \
+    --epochs 100 \
+    --batch-size 40 \
+    --valpercent 10
+
 # Validate DINO model
 python yolodio3d.py val \
     --data ultralytics/cfg/datasets/kitti-3d.yaml \
@@ -347,4 +356,3 @@ Standard YOLOv12-3D CLI without DINO integration. Use for:
 Contributions are welcome—please open an issue or submit a PR with improvements, fixes, or new features. The project is released under the AGPL-3.0 license (see `LICENSE`).
 
 For collaboration or academic inquiries, contact the AI Research Group, Department of Civil Engineering, KMUTT.
-
