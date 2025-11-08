@@ -118,6 +118,16 @@ YOLOv12-3D now supports optional **DINOv3 (Self-supervised Vision Transformer)**
 | YOLOv12l-3D-DINO (P0+P3) | Dual | ~180M | ~6-8GB | Slower | Maximum accuracy |
 | YOLOv12-3D (base) | None | Varies | ~2-4GB | Fastest | Quick prototyping |
 
+### Architecture Overview
+
+![YOLOv12-3D with DINOv3 Architecture](assets/yolov12_3d_dinov3_architecture.svg)
+
+The diagram above shows the complete YOLOv12-3D architecture with DINOv3 integration. Key components:
+- **DINOv3 at P0**: Self-supervised Vision Transformer at early stage for semantic enhancement
+- **DINOv3 at P3** (optional): Additional enhancement at mid-level for maximum performance
+- **Feature Pyramid**: Multi-scale feature extraction (P3, P4, P5) for object detection
+- **Detect3D Head**: 3D detection outputting bounding boxes, depth, dimensions, and yaw
+
 ### Train, Validate, Infer
 
 #### Using DINO-Enhanced Models (yolodio3d.py)
