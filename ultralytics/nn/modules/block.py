@@ -1767,15 +1767,7 @@ class DINO3Backbone(nn.Module):
         with torch.set_grad_enabled(not self.freeze_backbone):
             outputs = self.dino_model(pseudo_rgb_resized)
 
-            # Debug: Log output format for troubleshooting
-            print(f"🔍 DINOv3 output type: {type(outputs)}")
-            if isinstance(outputs, (list, tuple)):
-                print(f"🔍 DINOv3 output length: {len(outputs)}")
-                if len(outputs) > 0:
-                    print(f"🔍 First element type: {type(outputs[0])}")
-                    if hasattr(outputs[0], 'shape'):
-                        print(f"🔍 First element shape: {outputs[0].shape}")
-
+            # DINOv3 output processing
             # Handle different output formats
             if hasattr(outputs, 'last_hidden_state'):
                 features = outputs.last_hidden_state
