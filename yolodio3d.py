@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-YOLOv12-3D with DINO ViT-B Integration - CLI Tool
+YOLOv12-3D with DINOv3 Integration - CLI Tool
 
 Developed by AI Research Group
 Department of Civil Engineering
 King Mongkut's University of Technology Thonburi (KMUTT)
 
-A unified command-line interface for YOLOv12-3D operations with DINO ViT-B integration.
+A unified command-line interface for YOLOv12-3D operations with DINOv3 integration.
 
 Features:
-- YOLOv12-3D with DINO ViT-B backbone integration
-- Support for P0 and P3 level DINO enhancement
-- M (Medium) and L (Large) model variants
-- 3D object detection capabilities
+- YOLOv12-3D with DINOv3 (Self-supervised Vision Transformer) backbone integration
+- Support for P0 and P3 level DINOv3 enhancement
+- M (Medium) and L (Large) model variants with DINOv3 support
+- 3D object detection capabilities with enhanced feature extraction
 
 Usage:
     yolodio3d train --help
@@ -62,16 +62,16 @@ def print_banner():
     """Print CLI banner."""
     banner = f"""
 {Colors.BOLD}{Colors.OKCYAN}╔══════════════════════════════════════════════════════════════════════════════╗
-║                  YOLOv12-3D with DINO ViT-B CLI Tool                     ║
+║              YOLOv12-3D with DINOv3 (Self-supervised ViT) CLI Tool            ║
 ║                                                                              ║
 ║              AI Research Group, Civil Engineering, KMUTT                     ║
 ║                                                                              ║
 ║  Model Variants:                                                            ║
-║    • YOLOv12m-3d-dino: Medium model with DINO P0 or P0+P3 integration      ║
-║    • YOLOv12l-3d-dino: Large model with DINO P0 or P0+P3 integration       ║
+║    • YOLOv12m-3d-dino: Medium model with DINOv3 P0 or P0+P3 integration     ║
+║    • YOLOv12l-3d-dino: Large model with DINOv3 P0 or P0+P3 integration      ║
 ║                                                                              ║
-║  DINO Integration Options:                                                  ║
-║    • Single (P0): Early feature enhancement for lightweight DINO           ║
+║  DINOv3 Integration Options:                                                ║
+║    • Single (P0): Early feature enhancement with self-supervised ViT       ║
 ║    • Dual (P0+P3): Dual-scale enhancement for maximum performance          ║
 ╚══════════════════════════════════════════════════════════════════════════════╝{Colors.ENDC}
 """
@@ -172,11 +172,11 @@ def cmd_train(args):
         print_warning(f"Using only {args.valpercent}% of validation data - metrics may not be representative!")
         print_info("Recommended minimum: --valpercent 10")
 
-    # Print DINO info if enabled
+    # Print DINOv3 info if enabled
     if args.use_dino:
         integration_type = "Dual (P0+P3)" if args.dino_integration == "dual" else "Single (P0 only)"
-        print_success(f"DINO ViT-B integration enabled: {integration_type}")
-        print_info(f"Model: YOLOv12{args.yolo_size}-3D-DINO")
+        print_success(f"DINOv3 (Self-supervised ViT) integration enabled: {integration_type}")
+        print_info(f"Model: YOLOv12{args.yolo_size}-3D-DINOv3")
     else:
         print_info(f"Model: YOLOv12{args.yolo_size}-3D (Base)")
 
@@ -196,7 +196,7 @@ def cmd_train(args):
     val_info = f"{args.valpercent}%" if args.valpercent < 100.0 else "100% (full)"
     print_info(f"Validation data: {val_info}")
     if args.freeze_dino:
-        print_info("DINO backbone: FROZEN (recommended for faster training)")
+        print_info("DINOv3 backbone: FROZEN (recommended for faster training)")
 
     # Build training arguments
     train_args = {
@@ -241,12 +241,12 @@ def cmd_val(args):
     model_config = get_model_config(args.yolo_size, args.use_dino, args.dino_integration)
     print_info(f"Model config: {model_config}")
 
-    # Print DINO info if enabled
+    # Print DINOv3 info if enabled
     if args.use_dino:
         integration_type = "Dual (P0+P3)" if args.dino_integration == "dual" else "Single (P0 only)"
-        print_success(f"DINO ViT-B integration: {integration_type}")
+        print_success(f"DINOv3 (Self-supervised ViT) integration: {integration_type}")
     else:
-        print_info("Base YOLOv12-3D (no DINO)")
+        print_info("Base YOLOv12-3D (no DINOv3)")
 
     # Build validation arguments
     val_args = {
@@ -319,12 +319,12 @@ def cmd_export(args):
     # Get model config
     model_config = get_model_config(args.yolo_size, args.use_dino, args.dino_integration)
 
-    # Print DINO info if enabled
+    # Print DINOv3 info if enabled
     if args.use_dino:
         integration_type = "Dual (P0+P3)" if args.dino_integration == "dual" else "Single (P0 only)"
-        print_success(f"DINO ViT-B integration: {integration_type}")
+        print_success(f"DINOv3 (Self-supervised ViT) integration: {integration_type}")
     else:
-        print_info("Base YOLOv12-3D (no DINO)")
+        print_info("Base YOLOv12-3D (no DINOv3)")
 
     # Build export arguments
     export_args = {
@@ -357,20 +357,20 @@ def cmd_export(args):
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
-        description="YOLOv12-3D with DINO ViT-B Integration - CLI Tool",
+        description="YOLOv12-3D with DINOv3 (Self-supervised Vision Transformer) Integration - CLI Tool",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Train YOLOv12m-3D with DINO (dual P0+P3) on KITTI dataset
+  # Train YOLOv12m-3D with DINOv3 (dual P0+P3) on KITTI dataset
   python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --dino-integration dual --epochs 100 --batch-size 16
 
-  # Train YOLOv12l-3D with DINO (single P0 only) on KITTI dataset
+  # Train YOLOv12l-3D with DINOv3 (single P0 only) on KITTI dataset
   python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size l --dino-integration single --epochs 100 --batch-size 8
 
-  # Train YOLOv12m-3D with DINO (dual P0+P3) on KITTI dataset
+  # Train YOLOv12m-3D with DINOv3 (dual P0+P3) on KITTI dataset
   python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --dino-integration dual --epochs 100 --batch-size 16
 
-  # Train without DINO (base YOLOv12-3D)
+  # Train without DINOv3 (base YOLOv12-3D)
   python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --no-dino --epochs 100
 
   # Validate model

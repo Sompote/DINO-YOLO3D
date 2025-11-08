@@ -1,33 +1,36 @@
-# YOLOv12-3D with DINO Integration
+# YOLOv12-3D with DINOv3 Integration
 
 [![KMUTT](https://img.shields.io/badge/Made%20by-KMUTT%20Civil%20Engineering-orange)](https://www.kmutt.ac.th/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-red.svg)](https://pytorch.org/)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-green.svg)](LICENSE)
 
-Monocular YOLOv12 extended with a 3D detection head and enhanced with DINO (Self-supervised Vision Transformer) integration for improved feature extraction on the KITTI benchmark. The repository provides comprehensive CLI tools for dataset preparation, training, validation, inference, and export.
+Monocular YOLOv12 extended with a 3D detection head and enhanced with **DINOv3 (Self-supervised Vision Transformer)** integration for improved feature extraction on the KITTI benchmark. DINOv3 learns universal visual features from millions of unlabeled images, providing superior transfer learning and regularization. The repository provides comprehensive CLI tools for dataset preparation, training, validation, inference, and export.
 
 ![YOLOv12-3D detection result on KITTI street scene](assets/yolov12-3d-detection-sample.jpg)
 
 ## Recent Updates
 
 **Latest Improvements:**
-- ✨ **Validation Output Cleanup** - Removed debug logging statements for cleaner validation output
+- ✨ **DINOv3 Integration** - Updated to use DINOv3 (self-supervised Vision Transformer) with improved features
 - 🎯 **Enhanced CLI** - Added `--valpercent` parameter for flexible validation dataset sizing
 - 🚀 **Performance** - Improved training/validation workflow with reduced console clutter
 - 📊 **KITTI Metrics** - Streamlined 3D detection evaluation output
 
 ## Features
 
-- **DINO ViT-B Integration**: Self-supervised Vision Transformer for enhanced feature extraction
+- **DINOv3 Integration**: Self-supervised Vision Transformer for enhanced feature extraction
+  - **Self-supervised Learning**: Learns from millions of unlabeled images
+  - **Transfer Learning**: Superior feature transfer to specific domains
+  - **Regularization Effect**: Prevents overfitting with pre-trained features
   - **Single-Scale (P0)**: Lightweight integration for resource-constrained environments
   - **Dual-Scale (P0+P3)**: Maximum performance with multi-level feature enhancement
 - 3D-aware detections (depth, dimensions, yaw) on top of YOLOv12 accuracy and speed
 - Unified CLI tools (`yolo3d.py` and `yolodio3d.py`) for all operations
 - **Video 3D detection** with real-time 3D bounding box visualization
 - Automated KITTI setup utilities with verification and split management
-- Multiple model scales (m/l with DINO, n/s/m/l/x without DINO) to balance FPS and accuracy
-- Flexible DINO integration modes (enable/disable as needed)
+- Multiple model scales (m/l with DINOv3, n/s/m/l/x without DINO) to balance FPS and accuracy
+- Flexible DINOv3 integration modes (enable/disable as needed)
 
 ## Quick Start
 
@@ -38,11 +41,11 @@ pip install -r requirements.txt
 pip install ultralytics torch torchvision transformers
 ```
 
-**Note**: The `transformers` package is required for DINO ViT-B integration. If you're only using the base YOLOv12-3D model (without DINO), you can skip this dependency.
+**Note**: The `transformers` package is required for DINOv3 integration. If you're only using the base YOLOv12-3D model (without DINOv3), you can skip this dependency.
 
-### Hugging Face Login (Required for DINO Models)
+### Hugging Face Login (Required for DINOv3 Models)
 
-To use DINO-enhanced models, you need to authenticate with Hugging Face:
+To use DINOv3-enhanced models, you need to authenticate with Hugging Face:
 
 ```bash
 # Install huggingface_hub if not already installed
@@ -61,7 +64,7 @@ python -c "from huggingface_hub import login; login()"
 3. Create a new token (read access is sufficient)
 4. Use the token when prompted by `huggingface-cli login`
 
-**Note**: If you're only using the base YOLOv12-3D models (without DINO), you can skip this step.
+**Note**: If you're only using the base YOLOv12-3D models (without DINOv3), you can skip this step.
 
 ### Prepare KITTI
 
@@ -74,26 +77,33 @@ python download_kitti.py --extract
 python scripts/kitti_setup.py all --create-yaml
 ```
 
-## DINO Integration
+## DINOv3 Integration
 
-YOLOv12-3D now supports optional DINO (Self-supervised Vision Transformer) integration for enhanced feature extraction. DINO provides rich semantic features that improve 3D object detection accuracy.
+YOLOv12-3D now supports optional **DINOv3 (Self-supervised Vision Transformer)** integration for enhanced feature extraction. DINOv3 provides rich semantic features by learning from millions of unlabeled images, significantly improving 3D object detection accuracy through transfer learning and regularization.
 
-### DINO Integration Modes
+### Key Advantages of DINOv3
+
+- **Self-supervised Learning**: DINOv3 learns universal visual features from millions of unlabeled images
+- **Transfer Learning**: Superior feature transfer to specific domains (like KITTI 3D detection)
+- **Regularization Effect**: Pre-trained features prevent overfitting during training
+- **Better Initialization**: Excellent starting point vs random initialization
+
+### DINOv3 Integration Modes
 
 #### 1. **Dual-Scale Integration (P0+P3)** - Maximum Performance
-- DINO features integrated at both P0 (early stage) and P3 (mid-level, 1/8 resolution)
+- DINOv3 features integrated at both P0 (early stage) and P3 (mid-level, 1/8 resolution)
 - Best accuracy for complex scenes
 - Higher memory usage (~4-6GB for medium, ~6-8GB for large)
 - Recommended for production and maximum accuracy
 
 #### 2. **Single-Scale Integration (P0 only)** - Lightweight
-- DINO features integrated at P0 (early stage) only
+- DINOv3 features integrated at P0 (early stage) only
 - Faster training and inference
 - Lower memory requirements (~3-4GB for medium, ~5-6GB for large)
 - Best for limited computational resources
 
-#### 3. **No DINO** - Base YOLOv12-3D
-- Standard YOLOv12-3D without DINO enhancement
+#### 3. **No DINOv3** - Base YOLOv12-3D
+- Standard YOLOv12-3D without DINOv3 enhancement
 - Fastest training and inference
 - Lowest memory requirements
 - Good for quick prototyping

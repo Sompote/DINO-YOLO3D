@@ -1,22 +1,22 @@
-# YOLOv12m-3D with DINO ViT-B Single-Scale Integration (P0 only)
-# Integration of DINO Vision Transformer at P0 (early features) only
+# YOLOv12m-3D with DINOv3 Single-Scale Integration (P0 only)
+# Integration of DINOv3 (Self-supervised Vision Transformer) at P0 (early features) only
 # Model size: Medium (m)
-# DINO levels: P0 only
+# DINOv3 levels: P0 only
 
 nc: 8 # number of classes (KITTI: Car, Van, Truck, Pedestrian, Person_sitting, Cyclist, Tram, Misc)
 scales: # model compound scaling constants
   # [depth, width, max_channels]
   m: [0.50, 1.00, 512]  # YOLOv12m-3D-Medium
 
-# YOLOv12-3D-DINO backbone with single-scale DINO integration at P0
+# YOLOv12-3D-DINOv3 backbone with single-scale DINOv3 integration at P0
 backbone:
   # [from, repeats, module, args]
   # Early stage (P0/2)
   - [-1, 1, Conv,  [64, 3, 2]] # 0-P1/2
 
-  # DINO integration at P0 level (early features only)
-  # This provides high-level semantic understanding at the earliest stage
-  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 64]]  # 1: DINO-enhanced P0 features
+  # DINOv3 integration at P0 level (early features only)
+  # DINOv3 provides self-supervised feature enhancement for better semantic understanding
+  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 64]]  # 1: DINOv3-enhanced P0 features
 
   # Continue with standard backbone after DINO P0
   - [-1, 1, Conv,  [128, 3, 2, 1, 2]] # 2-P2/4

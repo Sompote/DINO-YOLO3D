@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import math
-from transformers import Dinov2Model, Dinov2Config
+from transformers import AutoModel, AutoConfig
 
 from ultralytics.utils.torch_utils import fuse_conv_and_bn
 
@@ -1374,20 +1374,24 @@ class A2C2f(nn.Module):
 
 class DINO3Backbone(nn.Module):
     """
-    DINO3 (DINOv3) backbone for YOLOv12-3D with pretrained Vision Transformer features.
+    DINOv3 (Self-supervised Vision Transformer) backbone for YOLOv12-3D with pretrained features.
 
     This class integrates Meta's DINOv3 pretrained model as a backbone for YOLOv12-3D,
-    providing advanced feature extraction capabilities based on the latest DINO3 architecture.
+    providing advanced feature extraction capabilities based on the latest DINOv3 architecture.
     DINOv3 offers improved dense features and better performance across vision tasks.
+
+    DINOv3 is a self-supervised learning method that learns universal visual features from
+    millions of unlabeled images, providing superior feature transfer and regularization.
 
     Args:
         model_name (str): DINOv3 model variant ('dinov3_vits16', 'dinov3_vitb16',
-                         'dinov3_vitl16', 'dinov3_vith16_plus', 'dinov3_vit7b16')
+                         'dinov3_vitl16', 'dinov3_vith16_plus', 'dinov3_vit7b16',
+                         'dinov3_convnext_small', etc.)
         freeze_backbone (bool): Whether to freeze DINOv3 weights during training
         output_channels (int): Number of output channel dimensions for features
 
     Attributes:
-        dino_model: Pretrained DINOv3 model
+        dino_model: Pretrained DINOv3 model from Hugging Face
         freeze_backbone: Flag to control weight freezing
         feature_adapters: Projection layers to match YOLOv12-3D channel dimensions
 
@@ -1406,7 +1410,7 @@ class DINO3Backbone(nn.Module):
         self.freeze_backbone = freeze_backbone
         self.input_channels = input_channels
         self.output_channels = output_channels
-        self.dino_version = str(dino_version)  # '2' or '3'
+        self.dino_version = '3'  # Always use DINOv3
 
         # DINOv3 model specifications based on official Facebook Research repository
         # Reference: https://github.com/facebookresearch/dinov3
@@ -1453,11 +1457,12 @@ class DINO3Backbone(nn.Module):
         self.dataset_type = self.model_spec.get('dataset', 'LVD')
 
         # Load DINOv3 model
-        print(f"Loading DINOv3 {self.model_type.upper()} model: {model_name}")
+        print(f"Loading DINOv3 (Self-supervised Vision Transformer) {self.model_type.upper()} model: {model_name}")
         print(f"  Parameters: {self.model_spec['params']}M")
         print(f"  Embedding dim: {self.embed_dim}")
         print(f"  Patch size: {self.patch_size}")
         print(f"  Dataset: {self.dataset_type} ({'Web Images' if self.dataset_type == 'LVD' else 'Satellite Imagery'})")
+        print(f"  Features: Self-supervised learning, transfer learning, regularization")
 
         # Initialize DINOv3 model
         self.dino_model = self._load_dinov3_model(model_name)
@@ -1466,7 +1471,7 @@ class DINO3Backbone(nn.Module):
         if self.freeze_backbone:
             for param in self.dino_model.parameters():
                 param.requires_grad = False
-            print(f"DINOv3 backbone weights frozen: {model_name}")
+            print(f"✓ DINOv3 backbone weights frozen: {model_name}")
 
         # Projection layers will be created dynamically
         self.input_projection = None
@@ -1475,42 +1480,103 @@ class DINO3Backbone(nn.Module):
         self.spatial_projection = None
 
     def _load_dinov3_model(self, model_name):
-        """Load DINO model using best available method."""
+        """Load DINOv3 model - ONLY DINOv3, never DINOv2."""
         import os
+
+        # Ensure we're using DINOv3 - validate model name
+        if 'dinov2' in model_name.lower():
+            raise ValueError(
+                f"ERROR: DINOv2 model '{model_name}' detected! "
+                f"This codebase only supports DINOv3 (Self-supervised Vision Transformer). "
+                f"Please use a DINOv3 model like 'dinov3_vitb16'."
+            )
 
         spec = self.dinov3_specs.get(model_name, self.dinov3_specs['dinov3_vitb16'])
 
-        print(f"🔄 Loading DINOv{self.dino_version} model: {model_name}")
+        print(f"🔄 Loading DINOv3 (Self-supervised Vision Transformer): {model_name}")
 
-        # Use DINOv2 models from Hugging Face (they are fully supported)
-        # DINOv3 models are not in transformers library yet
+        # Use only Hugging Face transformers for loading
+        print(f"🔄 Loading DINOv3 model via Hugging Face transformers: {model_name}")
+
+        # ========================================================================
+        # DINOv3 MODEL MAPPING - ONLY DINOv3 MODELS (NO DINOv2!)
+        # ========================================================================
+        # This mapping contains ONLY DINOv3 (Self-supervised Vision Transformer)
+        # models from Hugging Face. DINOv2 models are NOT supported.
+        # All models are from facebook/ with pretrain-lvd1689m or pretrain-sat
+        # ========================================================================
+        hf_model_mapping = {
+            # ViT models - Official DINOv3 pretrained models
+            'dinov3_vits16': 'facebook/dinov3-vits16-pretrain-lvd1689m',
+            'dinov3_vits16_plus': 'facebook/dinov3-vits16-pretrain-lvd1689m',
+            'dinov3_vitb16': 'facebook/dinov3-vitb16-pretrain-lvd1689m',
+            'dinov3_vitl16': 'facebook/dinov3-vitl16-pretrain-lvd1689m',
+            'dinov3_vith16_plus': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
+            'dinov3_vit7b16': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
+
+            # ConvNeXt models - Official DINOv3 ConvNeXt models
+            'dinov3_convnext_tiny': 'facebook/dinov3-convnext-tiny-pretrain-lvd1689m',
+            'dinov3_convnext_small': 'facebook/dinov3-convnext-small-pretrain-lvd1689m',
+            'dinov3_convnext_base': 'facebook/dinov3-convnext-base-pretrain-lvd1689m',
+            'dinov3_convnext_large': 'facebook/dinov3-convnext-large-pretrain-lvd1689m',
+
+            # Satellite imagery variants
+            'dinov3_vits16_sat': 'facebook/dinov3-vits16-pretrain-sat',
+            'dinov3_vitb16_sat': 'facebook/dinov3-vitb16-pretrain-sat',
+            'dinov3_vitl16_sat': 'facebook/dinov3-vitl16-pretrain-sat',
+            'dinov3_convnext_small_sat': 'facebook/dinov3-convnext-small-pretrain-sat',
+            'dinov3_convnext_base_sat': 'facebook/dinov3-convnext-base-pretrain-sat',
+            'dinov3_convnext_large_sat': 'facebook/dinov3-convnext-large-pretrain-sat',
+
+            # Legacy naming support
+            'dinov3_vits14': 'facebook/dinov3-vits16-pretrain-lvd1689m',
+            'dinov3_vitb14': 'facebook/dinov3-vitb16-pretrain-lvd1689m',
+            'dinov3_vitl14': 'facebook/dinov3-vitl16-pretrain-lvd1689m',
+            'dinov3_vitg14': 'facebook/dinov3-vit7b16-pretrain-lvd1689m',
+        }
+        default_model = 'facebook/dinov3-vitb16-pretrain-lvd1689m'
+
+        hf_model_id = hf_model_mapping.get(model_name, default_model)
+
+        # Double-check: Ensure the selected model is DINOv3
+        if 'dinov2' in hf_model_id.lower():
+            raise ValueError(
+                f"ERROR: DINOv2 model ID detected: {hf_model_id}\n"
+                f"This should never happen! The codebase only supports DINOv3 models.\n"
+                f"Please check the model mapping configuration."
+            )
+
+        print(f"   Loading DINOv3 (Self-supervised ViT) from Hugging Face: {hf_model_id}")
+
         try:
-            from transformers import AutoModel, Dinov2Model
+            import os
+            from transformers import AutoModel, AutoConfig
 
-            # Map to DINOv2 models which are supported by transformers
-            hf_model_mapping = {
-                'dinov3_vits16': 'facebook/dinov2-small',
-                'dinov3_vitb16': 'facebook/dinov2-base',
-                'dinov3_vitl16': 'facebook/dinov2-large',
-                'dinov3_vith16_plus': 'facebook/dinov2-giant',
-                'dinov3_vit7b16': 'facebook/dinov2-giant',
-            }
-            default_model = 'facebook/dinov2-base'
-
-            hf_model_id = hf_model_mapping.get(model_name, default_model)
-            print(f"   Using DINOv2 model (DINOv3 not yet in transformers): {hf_model_id}")
-
-            # Get token if available
+            # Get Hugging Face token from environment
             hf_token = os.getenv('HUGGINGFACE_HUB_TOKEN')
-            token_kwargs = {'token': hf_token} if hf_token else {}
-
             if hf_token:
                 print(f"   Using HUGGINGFACE_HUB_TOKEN: {hf_token[:7]}...")
+                token_kwargs = {'token': hf_token}
+            else:
+                print("   No HUGGINGFACE_HUB_TOKEN found, using default authentication")
+                token_kwargs = {}
 
-            model = Dinov2Model.from_pretrained(hf_model_id, **token_kwargs)
-            print(f"✅ Successfully loaded DINOv2 model from Hugging Face: {hf_model_id}")
+            # Load config first and ensure required attributes exist
+            config = AutoConfig.from_pretrained(hf_model_id, **token_kwargs)
 
-            # Detect embedding dimension
+            # Add missing attributes that might be expected by transformers
+            if not hasattr(config, 'output_attentions'):
+                config.output_attentions = False
+            if not hasattr(config, 'output_hidden_states'):
+                config.output_hidden_states = False
+            if not hasattr(config, 'return_dict'):
+                config.return_dict = True
+
+            # Load model with the configured config
+            model = AutoModel.from_pretrained(hf_model_id, config=config, **token_kwargs)
+            print(f"✅ Successfully loaded model from Hugging Face: {hf_model_id}")
+
+            # Get embedding dimension from loaded model
             if hasattr(model, 'config') and hasattr(model.config, 'hidden_size'):
                 actual_embed_dim = model.config.hidden_size
                 print(f"   Detected embed_dim from config: {actual_embed_dim}")
@@ -1518,18 +1584,29 @@ class DINO3Backbone(nn.Module):
                 actual_embed_dim = model.embed_dim
                 print(f"   Detected embed_dim from model: {actual_embed_dim}")
             else:
+                # Use the expected embedding dimension from our specs
                 actual_embed_dim = spec['embed_dim']
                 print(f"   Using spec embed_dim: {actual_embed_dim}")
 
+            # Update embedding dimension
             self.embed_dim = actual_embed_dim
+
+            # Note: Projection layers will be created dynamically in forward pass
             print(f"   Projection layers will be created dynamically based on input shape")
 
             return model
 
-        except Exception as e:
-            print(f"❌ Failed to load DINO model: {e}")
-            raise RuntimeError(f"Failed to load DINO model '{model_name}'. "
-                             f"Error: {e}. Please install/upgrade transformers: pip install --upgrade transformers")
+        except Exception as hf_error:
+            print(f"❌ Hugging Face loading failed: {hf_error}")
+            raise RuntimeError(
+                f"Failed to load DINOv3 model '{model_name}' from Hugging Face.\n"
+                f"Error: {hf_error}\n"
+                f"Please verify:\n"
+                f"  1. You are using a DINOv3 model (not DINOv2)\n"
+                f"  2. Your Hugging Face token is valid (huggingface-cli login)\n"
+                f"  3. You have internet connection\n"
+                f"  4. The model name is: {model_name}"
+            )
 
     def extract_features(self, features, input_size):
         """Extract features from DINOv3 patch features maintaining spatial dimensions."""
@@ -1655,8 +1732,12 @@ class DINO3Backbone(nn.Module):
         """
         Forward pass through DINOv3 backbone.
 
+        This method processes input CNN features through DINOv3's self-supervised
+        Vision Transformer to extract enhanced visual features, then fuses them
+        with the original features for improved downstream performance.
+
         Args:
-            x: Input tensor [B, C, H, W] - CNN features
+            x: Input tensor [B, C, H, W] - CNN features from previous layers
 
         Returns:
             Enhanced feature map with DINOv3 features [B, target_channels, H, W]
@@ -1677,12 +1758,12 @@ class DINO3Backbone(nn.Module):
         # Project CNN features to RGB-like representation
         pseudo_rgb = self.input_projection(x)
 
-        # Resize to DINOv3 expected size
+        # Resize to DINOv3 expected input size (224x224)
         dino_size = 224
         pseudo_rgb_resized = F.interpolate(pseudo_rgb, size=(dino_size, dino_size),
                                          mode='bilinear', align_corners=False)
 
-        # Forward through DINOv3
+        # Forward through DINOv3 Vision Transformer
         with torch.set_grad_enabled(not self.freeze_backbone):
             outputs = self.dino_model(pseudo_rgb_resized)
 
@@ -1712,22 +1793,35 @@ class DINO3Backbone(nn.Module):
         return enhanced_features
 
     def unfreeze_backbone(self):
-        """Unfreeze DINOv3 backbone for fine-tuning."""
+        """Unfreeze DINOv3 backbone for fine-tuning.
+
+        This allows DINOv3 weights to be updated during training, useful for
+        domain-specific fine-tuning when the pre-trained features need adaptation.
+        """
         for param in self.dino_model.parameters():
             param.requires_grad = True
         self.freeze_backbone = False
-        print("DINOv3 backbone unfrozen for fine-tuning")
+        print("✓ DINOv3 backbone unfrozen for fine-tuning")
 
     def freeze_backbone_layers(self):
-        """Freeze DINOv3 backbone to prevent training."""
+        """Freeze DINOv3 backbone to prevent training.
+
+        This locks DINOv3 weights to their pre-trained values, providing
+        regularization and faster training by keeping the powerful feature
+        extractor fixed.
+        """
         for param in self.dino_model.parameters():
             param.requires_grad = False
             param._ultralytics_frozen = True
         self.freeze_backbone = True
-        print("DINOv3 backbone frozen with protected parameters")
+        print("✓ DINOv3 backbone frozen with protected parameters")
 
     def train(self, mode=True):
-        """Override train mode to maintain frozen state of DINOv3."""
+        """Override train mode to maintain frozen state of DINOv3.
+
+        Ensures that when in training mode with freeze_backbone=True,
+        the DINOv3 model remains in eval mode to preserve its pre-trained features.
+        """
         super().train(mode)
         if self.freeze_backbone:
             self.dino_model.eval()

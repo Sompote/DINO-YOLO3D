@@ -1,31 +1,31 @@
-# YOLOv12m-3D with DINO ViT-B Dual-Scale Integration (P0 and P3)
-# Integration of DINO Vision Transformer at P0 (early features) and P3 (mid-level features)
+# YOLOv12m-3D with DINOv3 Dual-Scale Integration (P0 and P3)
+# Integration of DINOv3 (Self-supervised Vision Transformer) at P0 and P3 levels
 # Model size: Medium (m)
-# DINO levels: P0 and P3
+# DINOv3 levels: P0 and P3
 
 nc: 8 # number of classes (KITTI: Car, Van, Truck, Pedestrian, Person_sitting, Cyclist, Tram, Misc)
 scales: # model compound scaling constants
   # [depth, width, max_channels]
   m: [0.50, 1.00, 512]  # YOLOv12m-3D-Medium
 
-# YOLOv12-3D-DINO backbone with dual-scale DINO integration
+# YOLOv12-3D-DINOv3 backbone with dual-scale DINOv3 integration
 backbone:
   # [from, repeats, module, args]
   # Early stage (P0/2)
   - [-1, 1, Conv,  [64, 3, 2]] # 0-P1/2
 
-  # DINO integration at P0 level (early features)
-  # This provides high-level semantic understanding at the earliest stage
-  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 64]]  # 1: DINO-enhanced P0 features
+  # DINOv3 integration at P0 level (early features)
+  # DINOv3 provides self-supervised feature enhancement for semantic understanding
+  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 64]]  # 1: DINOv3-enhanced P0 features
 
-  # Continue with standard backbone after DINO P0
+  # Continue with standard backbone after DINOv3 P0
   - [-1, 1, Conv,  [128, 3, 2, 1, 2]] # 2-P2/4
   - [-1, 2, C3k2,  [256, False, 0.25]]
   - [-1, 1, Conv,  [256, 3, 2, 1, 4]] # 4-P3/8
 
-  # DINO integration at P3 level (mid-level features)
-  # This enhances feature representation for object detection
-  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 256]]  # 5: DINO-enhanced P3 features
+  # DINOv3 integration at P3 level (mid-level features)
+  # DINOv3 enhances feature representation for better object detection
+  - [-1, 1, DINO3Backbone, ['dinov3_vitb16', True, 256]]  # 5: DINOv3-enhanced P3 features
 
   # Continue with standard backbone
   - [-1, 2, C3k2,  [512, False, 0.25]]

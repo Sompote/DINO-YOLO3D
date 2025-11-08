@@ -1,42 +1,42 @@
-# YOLOv12-3D with DINO ViT-B Integration
+# YOLOv12-3D with DINOv3 Integration
 
 ## Overview
 
-This project implements YOLOv12-3D with DINO (Self-supervised Vision Transformer) integration at P0 and P3 levels, providing enhanced 3D object detection capabilities for datasets like KITTI.
+This project implements YOLOv12-3D with **DINOv3 (Self-supervised Vision Transformer)** integration at P0 and P3 levels, providing enhanced 3D object detection capabilities for datasets like KITTI. DINOv3 learns universal visual features from millions of unlabeled images, providing superior transfer learning and regularization.
 
 ## Architecture
 
 ### Model Variants
 
-1. **YOLOv12m-3D-DINO** (Medium)
+1. **YOLOv12m-3D-DINOv3** (Medium)
    - Model size: Medium (m)
-   - DINO Integration: P0 only OR P0+P3 (configurable)
-   - DINO Model: ViT-B (dinov3_vitb16)
+   - DINOv3 Integration: P0 only OR P0+P3 (configurable)
+   - DINOv3 Model: ViT-Base (dinov3_vitb16)
    - Total Parameters: ~100M (P0 only) or ~120M (P0+P3) (estimated)
    - Memory: ~3GB (P0 only) or ~4GB (P0+P3) GPU memory
 
-2. **YOLOv12l-3D-DINO** (Large)
+2. **YOLOv12l-3D-DINOv3** (Large)
    - Model size: Large (l)
-   - DINO Integration: P0 only OR P0+P3 (configurable)
-   - DINO Model: ViT-B (dinov3_vitb16)
+   - DINOv3 Integration: P0 only OR P0+P3 (configurable)
+   - DINOv3 Model: ViT-Base (dinov3_vitb16)
    - Total Parameters: ~160M (P0 only) or ~180M (P0+P3) (estimated)
    - Memory: ~5GB (P0 only) or ~6GB (P0+P3) GPU memory
 
-### DINO Integration Strategy
+### DINOv3 Integration Strategy
 
-The implementation offers **two DINO integration modes**:
+The implementation offers **two DINOv3 integration modes**:
 
 #### 1. Single-Scale Integration (P0 only) - Lightweight
-- **P0 Level Integration**: DINO features are integrated at the early stage (after first convolution)
-- Provides high-level semantic understanding from the beginning
+- **P0 Level Integration**: DINOv3 features are integrated at the early stage (after first convolution)
+- DINOv3 provides self-supervised semantic understanding from the beginning
 - Faster training and inference
 - Lower memory requirements
 - Best for: Limited computational resources, faster experimentation
 
 #### 2. Dual-Scale Integration (P0+P3) - Maximum Performance
-- **P0 Level Integration**: DINO features at early stage for high-level semantic understanding
-- **P3 Level Integration**: DINO features at mid-level stage (1/8 resolution) to enhance object detection
-- More comprehensive feature enhancement
+- **P0 Level Integration**: DINOv3 features at early stage for high-level semantic understanding
+- **P3 Level Integration**: DINOv3 features at mid-level stage (1/8 resolution) to enhance object detection
+- More comprehensive feature enhancement with self-supervised learning
 - Better accuracy for complex scenes
 - Best for: Maximum performance, complex datasets, production use
 
@@ -83,7 +83,7 @@ Head with Detect3D
 
 ### Training
 
-#### Train YOLOv12m-3D-DINO with Dual Integration (P0+P3) - Maximum Performance
+#### Train YOLOv12m-3D-DINOv3 with Dual Integration (P0+P3) - Maximum Performance
 ```bash
 python yolodio3d.py train \
     --data ultralytics/cfg/datasets/kitti-3d.yaml \
@@ -94,7 +94,7 @@ python yolodio3d.py train \
     --imgsz 640
 ```
 
-#### Train YOLOv12l-3D-DINO with Single Integration (P0 only) - Lightweight
+#### Train YOLOv12l-3D-DINOv3 with Single Integration (P0 only) - Lightweight
 ```bash
 python yolodio3d.py train \
     --data ultralytics/cfg/datasets/kitti-3d.yaml \
