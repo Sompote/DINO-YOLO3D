@@ -66,9 +66,13 @@ def print_banner():
 ║                                                                              ║
 ║              AI Research Group, Civil Engineering, KMUTT                     ║
 ║                                                                              ║
-║  Model Variants:                                                            ║
+║  Model Variants (with DINO):                                                ║
 ║    • YOLOv12m-3d-dino: Medium model with DINOv3 P0 or P0+P3 integration     ║
 ║    • YOLOv12l-3d-dino: Large model with DINOv3 P0 or P0+P3 integration      ║
+║                                                                              ║
+║  Model Variants (without DINO):                                             ║
+║    • YOLOv12m-3d: Medium base model (faster training)                       ║
+║    • YOLOv12l-3d: Large base model (faster training)                        ║
 ║                                                                              ║
 ║  DINOv3 Integration Options:                                                ║
 ║    • Single (P0): Early feature enhancement with self-supervised ViT       ║
@@ -118,8 +122,17 @@ def get_model_config(yolo_size, use_dino=True, dino_integration="dual"):
     base_dir = Path("ultralytics/cfg/models/v12")
 
     if not use_dino:
-        # Base YOLOv12-3D model
-        return base_dir / "yolov12-3d.yaml"
+        # Base YOLOv12-3D model (size-specific)
+        model_name = f"yolov12{yolo_size}-3d.yaml"
+        model_path = base_dir / model_name
+
+        # Check if size-specific config exists, otherwise use generic
+        if model_path.exists():
+            return model_path
+        else:
+            print_warning(f"Size-specific config not found: {model_path}")
+            print_info(f"Using generic yolov12-3d.yaml")
+            return base_dir / "yolov12-3d.yaml"
 
     # DINO-enhanced model
     if dino_integration == "single":
@@ -361,17 +374,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Train YOLOv12m-3D with DINOv3 (dual P0+P3) on KITTI dataset
-  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --dino-integration dual --epochs 100 --batch-size 16
-
-  # Train YOLOv12l-3D with DINOv3 (single P0 only) on KITTI dataset
-  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size l --dino-integration single --epochs 100 --batch-size 8
+  # Train YOLOv12l-3D with DINOv3 (dual P0+P3) on KITTI dataset
+  python yolodio3d.py train --data /workspace/DINO-YOLO3D/kitti-3d.yaml --yolo-size l --epochs 500 --batch-size 80
 
   # Train YOLOv12m-3D with DINOv3 (dual P0+P3) on KITTI dataset
-  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --dino-integration dual --epochs 100 --batch-size 16
+  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --epochs 100 --batch-size 16
 
-  # Train without DINOv3 (base YOLOv12-3D)
-  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --no-dino --epochs 100
+  # Train YOLOv12l-3D WITHOUT DINO (base model - faster training)
+  python yolodio3d.py train --data /workspace/DINO-YOLO3D/kitti-3d.yaml --yolo-size l --no-dino --epochs 500 --batch-size 80
+
+  # Train YOLOv12m-3D WITHOUT DINO (base model - faster training)
+  python yolodio3d.py train --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m --no-dino --epochs 100 --batch-size 16
 
   # Validate model
   python yolodio3d.py val --data ultralytics/cfg/datasets/kitti-3d.yaml --yolo-size m
