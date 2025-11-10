@@ -973,7 +973,8 @@ class v8Detection3DLoss(v8DetectionLoss):
 
                         pred_valid = pred_axis[fg_mask].squeeze(-1)[valid_mask] / 20.0
                         target_valid = axis_targets.squeeze(-1)[valid_mask] / 20.0
-                        l1_term = torch.nn.functional.l1_loss(pred_valid, target_valid, reduction="sum")
+                        valid_count = valid_mask.sum().float().clamp(min=1.0)
+                        l1_term = torch.nn.functional.l1_loss(pred_valid, target_valid, reduction="sum") / valid_count
 
                         raw_targets = axis_targets.squeeze(-1)[valid_mask]
                         logits_valid = axis_logits[axis_idx][fg_mask][valid_mask]
@@ -982,16 +983,14 @@ class v8Detection3DLoss(v8DetectionLoss):
                         right = torch.clamp(left + 1, max=self.loc_bins - 1)
                         wl = right - bin_idx
                         wr = 1.0 - wl
-                        ce_left = torch.nn.functional.cross_entropy(
-                            logits_valid, left.long(), reduction="none"
-                        )
-                        ce_right = torch.nn.functional.cross_entropy(
-                            logits_valid, right.long(), reduction="none"
-                        )
-                        gfl_term = (wl * ce_left + wr * ce_right).sum()
+                        ce_left = torch.nn.functional.cross_entropy(logits_valid, left.long(), reduction="none")
+                        ce_right = torch.nn.functional.cross_entropy(logits_valid, right.long(), reduction="none")
+                        gfl_term = (wl * ce_left + wr * ce_right).sum() / valid_count
 
-                        axis_l1 = (self.loc_weight * l1_term) / target_scores_sum
-                        axis_gfl = (self.loc_gfl_weight * gfl_term) / target_scores_sum
+                        axis_l1 = self.loc_weight * l1_term
+                        axis_gfl = self.loc_gfl_weight * gfl_term
+                        axis_l1 /= target_scores_sum
+                        axis_gfl /= target_scores_sum
                         loss[loss_idx] = axis_l1 + axis_gfl
                         loss[8 + axis_idx] = axis_gfl.detach()
 
