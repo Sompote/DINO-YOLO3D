@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ultralytics.nn.modules.head import Detect3D
 from ultralytics.utils.metrics import OKS_SIGMA
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import RotatedTaskAlignedAssigner, TaskAlignedAssigner, dist2bbox, dist2rbox, make_anchors
@@ -762,6 +763,51 @@ class v8Detection3DLoss(v8DetectionLoss):
         self.depth_weight = 1.0  # Weight for z (depth) loss (÷20, range: [0, 5])
         self.dim_weight = 0.5    # Weight for dimension loss (÷10, range: [0, 1])
         self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
+        self.loc_gfl_weight = 1.0  # Additional weight for GFL-style discretized supervision
+
+        # Location discretization defaults (overridden when Detect3D head is present)
+        self.loc_bin_size = 0.25
+        self.loc_ranges = [(-50.0, 50.0), (-50.0, 50.0), (0.0, 100.0)]
+        self.loc_bins = int(round((self.loc_ranges[0][1] - self.loc_ranges[0][0]) / self.loc_bin_size))
+        self.loc_logits_ch = self.loc_bins * 3
+        self._bin_centers = None
+        self.loc_value_min = torch.tensor([r[0] for r in self.loc_ranges], device=self.device)
+        self.loc_value_max = torch.tensor([r[1] for r in self.loc_ranges], device=self.device)
+
+        detect_head = None
+        for m in model.modules():
+            if isinstance(m, Detect3D):
+                detect_head = m
+                break
+
+        if detect_head is not None:
+            self.loc_bin_size = getattr(detect_head, "loc_bin_size", self.loc_bin_size)
+            self.loc_ranges = getattr(detect_head, "loc_ranges", self.loc_ranges)
+            self.loc_bins = getattr(detect_head, "loc_bins", self.loc_bins)
+            self.loc_logits_ch = self.loc_bins * 3
+            if hasattr(detect_head, "loc_bin_centers"):
+                self._bin_centers = detect_head.loc_bin_centers.detach().clone().to(self.device)
+            self.loc_value_min = torch.tensor([r[0] for r in self.loc_ranges], device=self.device)
+            self.loc_value_max = torch.tensor([r[1] for r in self.loc_ranges], device=self.device)
+
+    def _build_bin_centers(self, device):
+        centers = []
+        for vmin, vmax in self.loc_ranges:
+            centers.append(
+                torch.linspace(
+                    vmin + self.loc_bin_size / 2,
+                    vmax - self.loc_bin_size / 2,
+                    steps=self.loc_bins,
+                    device=device,
+                    dtype=torch.float32,
+                )
+            )
+        return torch.stack(centers, dim=0)
+
+    def _get_bin_centers(self, device):
+        if self._bin_centers is None or self._bin_centers.device != device:
+            self._bin_centers = self._build_bin_centers(device)
+        return self._bin_centers
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
@@ -847,11 +893,12 @@ class v8Detection3DLoss(v8DetectionLoss):
                 gt_rot_flat = batch["rotation_y"].to(self.device, dtype=params_3d.dtype)
 
                 # Assign 3D targets to positive anchors
-                target_loc_x = torch.zeros_like(params_3d[:, :, 0:1])
-                target_loc_y = torch.zeros_like(params_3d[:, :, 1:2])
-                target_depth = torch.zeros_like(params_3d[:, :, 2:3])
-                target_dims = torch.zeros_like(params_3d[:, :, 3:6])
-                target_rot = torch.zeros_like(params_3d[:, :, 6:7])
+                num_positions = params_3d.shape[1]
+                target_loc_x = params_3d.new_zeros((batch_size, num_positions, 1))
+                target_loc_y = params_3d.new_zeros((batch_size, num_positions, 1))
+                target_depth = params_3d.new_zeros((batch_size, num_positions, 1))
+                target_dims = params_3d.new_zeros((batch_size, num_positions, 3))
+                target_rot = params_3d.new_zeros((batch_size, num_positions, 1))
 
                 # For each image in batch, assign targets
                 for i in range(batch_size):
@@ -886,14 +933,16 @@ class v8Detection3DLoss(v8DetectionLoss):
                     target_dims[i, fg_positions] = gt_dims_flat[gt_indices_global]
                     target_rot[i, fg_positions] = gt_rot_flat[gt_indices_global]
 
-                # Extract predicted 3D parameters [x, y, z, h, w, l, rot_y]
-                pred_loc_x = (params_3d[:, :, 0:1].sigmoid() - 0.5) * 100  # [-50m, 50m]
-                pred_loc_y = (params_3d[:, :, 1:2].sigmoid() - 0.5) * 100  # [-50m, 50m]
-                # Depth with inverse sigmoid encoding (MonoFlex-style): d = 1/sigmoid(x) - 1
-                pred_depth = 1.0 / (params_3d[:, :, 2:3].sigmoid() + 1e-6) - 1.0
-                pred_depth = pred_depth.clamp(0, 100)  # [0, 100m]
-                pred_dims = params_3d[:, :, 3:6].sigmoid() * 10  # [0, 10m]
-                pred_rot = (params_3d[:, :, 6:7].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
+                # Extract predicted 3D parameters
+                loc_logits = params_3d[:, :, : self.loc_logits_ch].view(batch_size, -1, 3, self.loc_bins)
+                dim_rot = params_3d[:, :, self.loc_logits_ch :]
+                bin_centers = self._get_bin_centers(params_3d.device).view(1, 1, 3, self.loc_bins)
+                pred_coords = (loc_logits.softmax(-1) * bin_centers).sum(-1)
+                pred_loc_x = pred_coords[:, :, 0:1]
+                pred_loc_y = pred_coords[:, :, 1:2]
+                pred_depth = pred_coords[:, :, 2:3]
+                pred_dims = dim_rot[:, :, 0:3].sigmoid() * 10  # [0, 10m]
+                pred_rot = (dim_rot[:, :, 3:4].sigmoid() - 0.5) * 2 * torch.pi  # [-pi, pi]
 
                 # Ensure targets have same dtype as predictions (for AMP compatibility)
                 target_loc_x = target_loc_x.to(pred_loc_x.dtype)
@@ -902,53 +951,45 @@ class v8Detection3DLoss(v8DetectionLoss):
                 target_dims = target_dims.to(pred_dims.dtype)
                 target_rot = target_rot.to(pred_rot.dtype)
 
-                # Location X loss (simple normalization for higher loss magnitude)
                 if fg_mask.sum() > 0:
-                    # Filter out invalid location values
-                    valid_loc_x_mask = (target_loc_x[fg_mask].abs() < 100)
-                    if valid_loc_x_mask.sum() > 0:
-                        # Simple normalization: divide by 20 to get range [-2.5, 2.5]
-                        # This gives higher loss values compared to log-space
-                        pred_loc_x_valid = pred_loc_x[fg_mask][valid_loc_x_mask] / 20.0
-                        target_loc_x_valid = target_loc_x[fg_mask][valid_loc_x_mask] / 20.0
+                    axis_info = [
+                        (pred_loc_x, target_loc_x, 3, (self.loc_value_min[0].item(), self.loc_value_max[0].item())),
+                        (pred_loc_y, target_loc_y, 4, (self.loc_value_min[1].item(), self.loc_value_max[1].item())),
+                        (pred_depth, target_depth, 5, (self.loc_value_min[2].item(), self.loc_value_max[2].item())),
+                    ]
+                    axis_logits = [loc_logits[:, :, 0, :], loc_logits[:, :, 1, :], loc_logits[:, :, 2, :]]
 
-                        loss[3] = (
-                            self.loc_weight
-                            * torch.nn.functional.l1_loss(pred_loc_x_valid, target_loc_x_valid, reduction="sum")
-                            / target_scores_sum
+                    for axis_idx, (pred_axis, target_axis, loss_idx, (vmin, vmax)) in enumerate(axis_info):
+                        if axis_idx < 2:
+                            valid_mask = (target_axis[fg_mask].abs() < 100)
+                        else:
+                            valid_mask = (target_axis[fg_mask] > 0) & (target_axis[fg_mask] < 200)
+                        if valid_mask.sum() == 0:
+                            continue
+
+                        pred_valid = pred_axis[fg_mask][valid_mask] / 20.0
+                        target_valid = target_axis[fg_mask][valid_mask] / 20.0
+                        l1_term = torch.nn.functional.l1_loss(pred_valid, target_valid, reduction="sum")
+
+                        raw_targets = target_axis[fg_mask][valid_mask].view(-1)
+                        logits_valid = axis_logits[axis_idx][fg_mask][valid_mask]
+                        bin_idx = ((raw_targets - vmin) / self.loc_bin_size).clamp(0, self.loc_bins - 1 - 1e-3)
+                        left = bin_idx.floor()
+                        right = torch.clamp(left + 1, max=self.loc_bins - 1)
+                        wl = right - bin_idx
+                        wr = 1.0 - wl
+                        ce_left = torch.nn.functional.cross_entropy(
+                            logits_valid, left.long(), reduction="none"
                         )
-
-                # Location Y loss (simple normalization for higher loss magnitude)
-                if fg_mask.sum() > 0:
-                    # Filter out invalid location values
-                    valid_loc_y_mask = (target_loc_y[fg_mask].abs() < 100)
-                    if valid_loc_y_mask.sum() > 0:
-                        # Simple normalization: divide by 20 to get range [-2.5, 2.5]
-                        # This gives higher loss values compared to log-space
-                        pred_loc_y_valid = pred_loc_y[fg_mask][valid_loc_y_mask] / 20.0
-                        target_loc_y_valid = target_loc_y[fg_mask][valid_loc_y_mask] / 20.0
-
-                        loss[4] = (
-                            self.loc_weight
-                            * torch.nn.functional.l1_loss(pred_loc_y_valid, target_loc_y_valid, reduction="sum")
-                            / target_scores_sum
+                        ce_right = torch.nn.functional.cross_entropy(
+                            logits_valid, right.long(), reduction="none"
                         )
+                        gfl_term = (wl * ce_left + wr * ce_right).sum()
 
-                # Depth (Z) loss (simple normalization, same as x, y)
-                if fg_mask.sum() > 0:
-                    # Filter out invalid depth values (negative or extremely large values indicate DontCare)
-                    valid_depth_mask = (target_depth[fg_mask] > 0) & (target_depth[fg_mask] < 200)
-                    if valid_depth_mask.sum() > 0:
-                        # Simple normalization: divide by 20 to get range [0, 5]
-                        # Same approach as x, y for consistency across all spatial coordinates
-                        pred_depth_valid = pred_depth[fg_mask][valid_depth_mask] / 20.0
-                        target_depth_valid = target_depth[fg_mask][valid_depth_mask] / 20.0
-
-                        loss[5] = (
-                            self.depth_weight
-                            * torch.nn.functional.l1_loss(pred_depth_valid, target_depth_valid, reduction="sum")
-                            / target_scores_sum
-                        )
+                        axis_loss = (
+                            self.loc_weight * l1_term + self.loc_gfl_weight * gfl_term
+                        ) / target_scores_sum
+                        loss[loss_idx] = axis_loss
 
                 # Dimension loss (L1 loss with normalization)
                 if fg_mask.sum() > 0:

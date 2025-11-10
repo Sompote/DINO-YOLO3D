@@ -233,35 +233,38 @@ class Detect3D(Detect):
     def __init__(self, nc=80, ch=()):
         """Initialize 3D detection head with number of classes `nc` and layer channels `ch`."""
         super().__init__(nc, ch)
-        # 3D box parameters: location_3d (3), 3D dimensions (3), rotation_y (1) = 7 extra parameters
-        self.n3d = 7  # x, y, z, height_3d, width_3d, length_3d, rotation_y
+        # Discretized location configuration (shared with 3D loss)
+        self.loc_bin_size = 0.25  # meters per bin
+        self.loc_ranges = [(-50.0, 50.0), (-50.0, 50.0), (0.0, 100.0)]  # x, y, z ranges in meters
+        self.loc_bins = int(round((self.loc_ranges[0][1] - self.loc_ranges[0][0]) / self.loc_bin_size))
+        self.loc_logits_ch = self.loc_bins * 3  # three axes
+        self.extra_params = 4  # h, w, l, rot_y
+        self.n3d = self.loc_logits_ch + self.extra_params
 
-        c4 = max(ch[0] // 4, self.n3d)
+        hidden_c = max(ch[0] // 4, min(self.n3d, 512))
         # Additional head for 3D-specific parameters
-        self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.n3d, 1)) for x in ch)
+        self.cv4 = nn.ModuleList(
+            nn.Sequential(Conv(x, hidden_c, 3), Conv(hidden_c, hidden_c, 3), nn.Conv2d(hidden_c, self.n3d, 1))
+            for x in ch
+        )
+        self.register_buffer("loc_bin_centers", self._build_bin_centers(), persistent=False)
 
     def forward(self, x):
         """Concatenates and returns predicted 2D bounding boxes, class probabilities, and 3D parameters."""
         bs = x[0].shape[0]  # batch size
-        # Predict 3D parameters: [x, y, z, h3d, w3d, l3d, rotation_y]
         params_3d = torch.cat([self.cv4[i](x[i]).view(bs, self.n3d, -1) for i in range(self.nl)], 2)
 
         # Decode 3D parameters for inference
         if not self.training:
-            # location_x: can be negative or positive (-50m to +50m)
-            loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
-            # location_y: can be negative or positive (-50m to +50m)
-            loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
-            # location_z (depth): inverse sigmoid encoding (MonoFlex-style)
-            # Formula: d = 1/sigmoid(x) - 1, better distribution than linear scaling
-            loc_z = 1.0 / (params_3d[:, 2:3, :].sigmoid() + 1e-6) - 1.0
-            loc_z = loc_z.clamp(0, 100)  # Constrain to reasonable range
+            loc_logits = params_3d[:, : self.loc_logits_ch, :].view(bs, 3, self.loc_bins, -1)
+            dim_rot = params_3d[:, self.loc_logits_ch :, :]
+            loc_values = self._decode_locations(loc_logits)
             # 3D dimensions: positive values
-            dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # scale to reasonable size (0-10m)
+            dim_3d = dim_rot[:, 0:3, :].sigmoid() * 10  # scale to reasonable size (0-10m)
             # rotation_y: -pi to pi
-            rotation_y = (params_3d[:, 6:7, :].sigmoid() - 0.5) * 2 * math.pi
+            rotation_y = (dim_rot[:, 3:4, :].sigmoid() - 0.5) * 2 * math.pi
             # Concatenate decoded parameters
-            params_3d_decoded = torch.cat([loc_x, loc_y, loc_z, dim_3d, rotation_y], 1)
+            params_3d_decoded = torch.cat([loc_values, dim_3d, rotation_y], 1)
         else:
             params_3d_decoded = params_3d
 
@@ -287,18 +290,38 @@ class Detect3D(Detect):
             boxes_3d: 3D bounding box parameters
         """
         # Extract 3D parameters
-        loc_x = (params_3d[:, 0:1, :].sigmoid() - 0.5) * 100
-        loc_y = (params_3d[:, 1:2, :].sigmoid() - 0.5) * 100
-        # Depth with inverse sigmoid encoding (MonoFlex-style)
-        loc_z = 1.0 / (params_3d[:, 2:3, :].sigmoid() + 1e-6) - 1.0
-        loc_z = loc_z.clamp(0, 100)
-        dim_3d = params_3d[:, 3:6, :].sigmoid() * 10  # [h, w, l]
-        rotation_y = (params_3d[:, 6:7, :].sigmoid() - 0.5) * 2 * math.pi
+        loc_logits = params_3d[:, : self.loc_logits_ch, :].view(params_3d.shape[0], 3, self.loc_bins, -1)
+        loc_values = self._decode_locations(loc_logits)
+        dim_rot = params_3d[:, self.loc_logits_ch :, :]
+        dim_3d = dim_rot[:, 0:3, :].sigmoid() * 10  # [h, w, l]
+        rotation_y = (dim_rot[:, 3:4, :].sigmoid() - 0.5) * 2 * math.pi
 
         # Combine into 3D box representation
         # Format: [x_2d, y_2d, w_2d, h_2d, x_3d, y_3d, z_3d, h_3d, w_3d, l_3d, rotation_y]
-        boxes_3d = torch.cat([bboxes_2d, loc_x, loc_y, loc_z, dim_3d, rotation_y], dim=1)
+        boxes_3d = torch.cat([bboxes_2d, loc_values, dim_3d, rotation_y], dim=1)
         return boxes_3d
+
+    def _build_bin_centers(self):
+        """Precompute bin centers for discretized x/y/z locations."""
+        centers = []
+        for vmin, vmax in self.loc_ranges:
+            centers.append(
+                torch.linspace(
+                    vmin + self.loc_bin_size / 2,
+                    vmax - self.loc_bin_size / 2,
+                    steps=self.loc_bins,
+                    dtype=torch.float32,
+                )
+            )
+        return torch.stack(centers, dim=0)
+
+    def _decode_locations(self, logits):
+        """Decode discretized location logits into metric coordinates."""
+        probs = logits.softmax(2)
+        bin_centers = self.loc_bin_centers.view(1, 3, self.loc_bins, 1)
+        if bin_centers.device != probs.device:
+            bin_centers = bin_centers.to(probs.device)
+        return (probs * bin_centers).sum(2)
 
 
 class Pose(Detect):
