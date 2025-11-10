@@ -759,11 +759,11 @@ class v8Detection3DLoss(v8DetectionLoss):
         super().__init__(model)
         # Weight factors for 3D losses (tuned to balance with 2D losses)
         # All spatial coordinates (x, y, z) use simple division normalization
-        self.loc_weight = 5.0    # Weight for x, y location losses (÷20, range: [-2.5, 2.5])
-        self.depth_weight = 5.0  # Weight for z (depth) loss (÷20, range: [0, 5])
+        self.loc_weight = 15.0   # Weight for x, y location losses
+        self.depth_weight = 15.0  # Weight for z (depth) loss
         self.dim_weight = 0.5    # Weight for dimension loss (÷10, range: [0, 1])
         self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
-        self.loc_gfl_weight = 5.0  # Additional weight for GFL-style discretized supervision
+        self.loc_gfl_weight = 15.0  # Additional weight for GFL-style discretized supervision
 
         # Location discretization defaults (overridden when Detect3D head is present)
         self.loc_bin_size = 0.25
