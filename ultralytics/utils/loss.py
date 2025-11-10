@@ -258,7 +258,7 @@ class v8DetectionLoss:
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
 
-        return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
+        return loss[:8].sum() * batch_size, loss.detach()  # primary loss drives gradients
 
 
 class v8SegmentationLoss(v8DetectionLoss):
@@ -811,8 +811,9 @@ class v8Detection3DLoss(v8DetectionLoss):
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for 3D YOLO model."""
-        # loss indices: 0=box, 1=cls, 2=dfl, 3=loc_x, 4=loc_y, 5=depth, 6=dim, 7=rot
-        loss = torch.zeros(8, device=self.device)
+        # loss indices: 0=box, 1=cls, 2=dfl, 3=loc_x, 4=loc_y, 5=depth, 6=dim, 7=rot,
+        #               8=loc_x_gfl, 9=loc_y_gfl, 10=depth_gfl (logging only)
+        loss = torch.zeros(11, device=self.device)
 
         # Get predictions
         # preds should provide (feature_maps, params_3d) but can arrive nested from different runners.
@@ -989,10 +990,10 @@ class v8Detection3DLoss(v8DetectionLoss):
                         )
                         gfl_term = (wl * ce_left + wr * ce_right).sum()
 
-                        axis_loss = (
-                            self.loc_weight * l1_term + self.loc_gfl_weight * gfl_term
-                        ) / target_scores_sum
-                        loss[loss_idx] = axis_loss
+                        axis_l1 = (self.loc_weight * l1_term) / target_scores_sum
+                        axis_gfl = (self.loc_gfl_weight * gfl_term) / target_scores_sum
+                        loss[loss_idx] = axis_l1 + axis_gfl
+                        loss[8 + axis_idx] = axis_gfl.detach()
 
                 # Dimension loss (L1 loss with normalization)
                 if fg_mask.sum() > 0:
