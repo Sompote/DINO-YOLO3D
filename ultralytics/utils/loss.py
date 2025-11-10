@@ -960,18 +960,21 @@ class v8Detection3DLoss(v8DetectionLoss):
                     axis_logits = [loc_logits[:, :, 0, :], loc_logits[:, :, 1, :], loc_logits[:, :, 2, :]]
 
                     for axis_idx, (pred_axis, target_axis, loss_idx, (vmin, vmax)) in enumerate(axis_info):
+                        axis_targets = target_axis[fg_mask]
                         if axis_idx < 2:
-                            valid_mask = (target_axis[fg_mask].abs() < 100)
+                            valid_mask = (axis_targets.abs() < 100)
                         else:
-                            valid_mask = (target_axis[fg_mask] > 0) & (target_axis[fg_mask] < 200)
+                            valid_mask = (axis_targets > 0) & (axis_targets < 200)
+                        if valid_mask.dim() > 1:
+                            valid_mask = valid_mask.squeeze(-1)
                         if valid_mask.sum() == 0:
                             continue
 
-                        pred_valid = pred_axis[fg_mask][valid_mask] / 20.0
-                        target_valid = target_axis[fg_mask][valid_mask] / 20.0
+                        pred_valid = pred_axis[fg_mask].squeeze(-1)[valid_mask] / 20.0
+                        target_valid = axis_targets.squeeze(-1)[valid_mask] / 20.0
                         l1_term = torch.nn.functional.l1_loss(pred_valid, target_valid, reduction="sum")
 
-                        raw_targets = target_axis[fg_mask][valid_mask].view(-1)
+                        raw_targets = axis_targets.squeeze(-1)[valid_mask]
                         logits_valid = axis_logits[axis_idx][fg_mask][valid_mask]
                         bin_idx = ((raw_targets - vmin) / self.loc_bin_size).clamp(0, self.loc_bins - 1 - 1e-3)
                         left = bin_idx.floor()
