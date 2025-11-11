@@ -7,7 +7,12 @@
 
 Monocular YOLOv12 extended with a 3D detection head and enhanced with **DINOv3 (Self-supervised Vision Transformer)** integration for improved feature extraction on the KITTI benchmark. DINOv3 learns universal visual features from millions of unlabeled images, providing superior transfer learning and regularization. The repository provides comprehensive CLI tools for dataset preparation, training, validation, inference, and export.
 
-![YOLOv12-3D detection result on KITTI street scene](assets/yolov12-3d-detection-sample.jpg)
+
+**Detection Examples:**
+
+<p align="center">
+  <img src="assets/3d_detection_street_scene.jpg" width="90%" />
+</p>
 
 ## Recent Updates
 
@@ -342,7 +347,6 @@ Standard YOLOv12-3D CLI without DINO integration. Use for:
 ## Example Results
 
 ### Image Detection
-![3D Detection on Street Scene](assets/yolov12-3d-detection-sample.jpg)
 
 ### Video Detection (GitHub plays GIF below)
 ![3D Detection Result - Playable GIF](result_preview.gif)

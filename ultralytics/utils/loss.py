@@ -763,7 +763,7 @@ class v8Detection3DLoss(v8DetectionLoss):
         self.depth_weight = 80.0  # Weight for z (depth) loss
         self.dim_weight = 0.5    # Weight for dimension loss (÷10, range: [0, 1])
         self.rot_weight = 1.0    # Weight for rotation loss (sin/cos, range: [-1, 1])
-        self.loc_gfl_weight = 80.0  # Additional weight for GFL-style discretized supervision
+        self.loc_gfl_weight = 200.0  # Increased from 80.0 to encourage sharper probability distributions
 
         # Location discretization defaults (overridden when Detect3D head is present)
         self.loc_bin_size = 0.25

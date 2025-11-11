@@ -4,13 +4,14 @@
 Uses trained YOLOv12-3D model to detect objects and visualize 3D bounding boxes
 """
 
+import math
+from pathlib import Path
+
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from pathlib import Path
-import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-import math
 
 from ultralytics import YOLO
 
@@ -311,7 +312,7 @@ def run_inference(model_path, image_paths, data_yaml, output_dir="inference_resu
 
 if __name__ == "__main__":
     # Configuration
-    MODEL_PATH = "/Users/sompoteyouwai/env/yolo3d/yolov12/last-4.pt"
+    MODEL_PATH = "/Users/sompoteyouwai/env/ yolodio3d/YOLOv12-3D/last-5.pt"
     DATA_YAML = "kitti-3d.yaml"
     IMAGE_DIR = "/Users/sompoteyouwai/Downloads/datakitti/datasets/kitti/training/image_2"
 
@@ -323,6 +324,8 @@ if __name__ == "__main__":
         image_dir / "000010.png",
         image_dir / "000050.png",
         image_dir / "000100.png",
+        image_dir / "000110.png",
+        image_dir / "000120.png",
     ]
 
     # Filter existing images
