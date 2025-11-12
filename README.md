@@ -14,6 +14,12 @@ Monocular YOLOv12 extended with a 3D detection head and enhanced with **DINOv3 (
   <img src="assets/3d_detection_street_scene.jpg" width="90%" />
 </p>
 
+**Video Detection Demo:**
+
+<p align="center">
+  <img src="assets/3d_detection_demo.gif" width="90%" />
+</p>
+
 ## Recent Updates
 
 **Latest Improvements:**
